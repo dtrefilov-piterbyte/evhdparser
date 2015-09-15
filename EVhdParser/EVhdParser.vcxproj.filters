@@ -1,0 +1,96 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Driver Files">
+      <UniqueIdentifier>{8E41214B-6785-4CFE-B992-037D68949A14}</UniqueIdentifier>
+      <Extensions>inf;inv;inx;mof;mc;</Extensions>
+    </Filter>
+    <Filter Include="2012 R2">
+      <UniqueIdentifier>{a1e2b96b-636d-48c0-9adc-9030ca2b2da8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2012">
+      <UniqueIdentifier>{b901b1fa-347f-4e2d-b11a-feaacac22ce9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common">
+      <UniqueIdentifier>{083dbe9e-0abb-4dc0-b1e5-cb814f2dddd0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cipher">
+      <UniqueIdentifier>{3aa1853f-2011-4b69-9808-e31829ebd329}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="EVhdParser.inf">
+      <Filter>Driver Files</Filter>
+    </Inf>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="2012R2\driver.c">
+      <Filter>2012 R2</Filter>
+    </ClCompile>
+    <ClCompile Include="2012R2\parser.c">
+      <Filter>2012 R2</Filter>
+    </ClCompile>
+    <ClCompile Include="2012R2\VhdFlt.c">
+      <Filter>2012 R2</Filter>
+    </ClCompile>
+    <ClCompile Include="2012\driver.c">
+      <Filter>2012</Filter>
+    </ClCompile>
+    <ClCompile Include="2012\parser.c">
+      <Filter>2012</Filter>
+    </ClCompile>
+    <ClCompile Include="utils.c">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="Vdrvroot.c">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="XorCipher.c">
+      <Filter>cipher</Filter>
+    </ClCompile>
+    <ClCompile Include="cipher.c">
+      <Filter>cipher</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="2012R2\driver.h">
+      <Filter>2012 R2</Filter>
+    </ClInclude>
+    <ClInclude Include="2012R2\parser.h">
+      <Filter>2012 R2</Filter>
+    </ClInclude>
+    <ClInclude Include="2012R2\Vstor.h">
+      <Filter>2012 R2</Filter>
+    </ClInclude>
+    <ClInclude Include="2012\driver.h">
+      <Filter>2012</Filter>
+    </ClInclude>
+    <ClInclude Include="2012\Vstor.h">
+      <Filter>2012</Filter>
+    </ClInclude>
+    <ClInclude Include="2012\parser.h">
+      <Filter>2012</Filter>
+    </ClInclude>
+    <ClInclude Include="Guids.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="Ioctl.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="ScsiOp.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="Vdrvroot.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="cipher.h">
+      <Filter>cipher</Filter>
+    </ClInclude>
+    <ClInclude Include="XorCipher.h">
+      <Filter>cipher</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,33 @@
+;
+; EVhdParser.inf
+;
+
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=EVhdParser
+ClassGuid={860ECCBC-6E7D-4A17-B181-81D64AF02170}
+Provider=%ManufacturerName%
+CatalogFile=EVhdParser.cat
+DriverVer=
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+
+
+[Strings]
+ManufacturerName=""
+ClassName=""
+DiskName="EVhdParser Source Disk"
