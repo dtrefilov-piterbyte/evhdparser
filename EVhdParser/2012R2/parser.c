@@ -5,8 +5,18 @@
 #include <ntddscsi.h>
 #include "Vdrvroot.h"
 #include "Guids.h"
+#include "AesCipher.h"
+
 
 static const ULONG EvhdPoolTag = 'VVpp';
+
+// TODO: hardcoded test disk identifier
+DEFINE_GUID(GUID_TEST_VHD_DISK_ID,
+	0x1f3afa79, 0x7f5b, 0x4e8b, 0xbc, 0x99, 0xf0, 0x65, 0xc8, 0x1e, 0x96, 0xf6);
+
+UCHAR rgbTestAes128Key[16] = {
+	162,  101,   19,  209,  154,  134,  198,   11,   40,  242,  103,   43,   26,    9,  159,   59
+};
 
 static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
 {
@@ -23,21 +33,42 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		return status;
 	}
 	DiskFormat = Response.vals[0].dwLow;
-	UNICODE_STRING cryptedVhd;
 
-	DEBUG("Initializing cipher for %ws", diskPath->Buffer);
-	RtlInitUnicodeString(&cryptedVhd, L"C:\\1.vhdx");
-
-	if (RtlEqualUnicodeString(diskPath, &cryptedVhd, TRUE))
+	// IsoParser is not supported
+	if (EDiskFormat_Vhd != DiskFormat && EDiskFormat_Vhdx != DiskFormat)
 	{
-		// Hardcoded value for testing purposes
-		ULONG32 dwXorValue = 0xCCCCCCCC;
-		
+		return status;
+	}
+
+	Request = EMetaInfoType_Page83Data;
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+		&Response, sizeof(MetaInfoResponse));
+	if (!NT_SUCCESS(status))
+	{
+		DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
+		return status;
+	}
+
+	if (0 == memcmp(&Response.guid, &GUID_TEST_VHD_DISK_ID, sizeof(GUID)))
+	{
+#if 0
+		Aes128CipherConfig config = { 
+			.ChainingMode = ChainingMode_CBC
+		};
+#else
+		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_AES128);
+		ULONG32 config = 0xCCCCCCCC;
+#endif
 		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_Xor);
-		status = parser->pCipherEngine->pfnCreate(&dwXorValue, &parser->pCipherCtx);
+		if (!parser->pCipherEngine)
+		{
+			DEBUG("Cipher engine is unavailable\n");
+			return status;
+		}
+		status = parser->pCipherEngine->pfnCreate(&config, &parser->pCipherCtx);
 		if (NT_SUCCESS(status))
 		{
-			status = parser->pCipherEngine->pfnInit(parser->pCipherCtx, NULL, NULL);
+			status = parser->pCipherEngine->pfnInit(parser->pCipherCtx, rgbTestAes128Key, NULL);
 			if (!NT_SUCCESS(status))
 			{
 				parser->pCipherEngine->pfnDestroy(parser->pCipherCtx);
@@ -111,7 +142,7 @@ static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pMdl, SIZE_T size, 
 		return STATUS_INSUFFICIENT_RESOURCES;
 	ASSERT(0 == size % SectorSize);
 
-	DEBUG("VHD: %s 0x%X bytes", Encrypt ? "Encrypting" : "Decrypting", size);
+	DEBUG("VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
 
 	for (SectorOffset = 0; SectorOffset < size; SectorOffset += SectorSize)
 	{
@@ -230,7 +261,7 @@ static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
 		case SCSI_OP_CODE_READ_16:
 			if (pPacket->pInner->pParser->pCipherCtx)
 			{
-				DEBUG("VHD[%X]: Read request complete: %X blocks starting from %X",
+				DEBUG("VHD[%X]: Read request complete: %X blocks starting from %X\n",
 					PsGetCurrentThreadId(), wNumSectors, dwStartingSector);
 				EvhdCryptBlocks(pPacket->pInner->pParser, pPacket->pMdl, pPacket->pInner->Srb.DataTransferLength, FALSE);
 			}
@@ -241,7 +272,7 @@ static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
 		case SCSI_OP_CODE_WRITE_16:
 			if (pPacket->pInner->pParser->pCipherCtx)
 			{
-				DEBUG("VHD[%X]: Write request complete: %X blocks starting from %X",
+				DEBUG("VHD[%X]: Write request complete: %X blocks starting from %X\n",
 					PsGetCurrentThreadId(), wNumSectors, dwStartingSector);
 
 				pPacket->pMdl = FreeInnerMdl(pPacket->pMdl);
@@ -424,7 +455,7 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	status = EvhdInitCipher(parser, diskPath);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("EvhdInitCipher failed with error 0x%08X", status);
+		DEBUG("EvhdInitCipher failed with error 0x%08X\n", status);
 		goto failure_cleanup;
 	}
 
@@ -528,7 +559,7 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 	pInner->Srb.SrbExtension = pInner + 1;	// variable-length extension right after the inner request block
 	pInner->Srb.SenseInfoBuffer = &pRequest->Sense;
 	memmove(pInner->Srb.Cdb, &pRequest->Sense, pRequest->CdbLength);
-	if (parser->pCipherCtx) DEBUG("VHD[%X]: Scsi request: %02X, %02X, %04X", PsGetCurrentThreadId(), opCode, pRequest->bDataIn, pRequest->DataTransferLength);
+	if (parser->pCipherCtx) DEBUG("VHD[%X]: Scsi request: %02X, %02X, %04X\n", PsGetCurrentThreadId(), opCode, pRequest->bDataIn, pRequest->DataTransferLength);
 	USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pPacket->pInner->Srb.Cdb[7]));
 	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pPacket->pInner->Srb.Cdb[2]));
 	switch (opCode)
@@ -551,7 +582,7 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 	case SCSI_OP_CODE_WRITE_16:
 		if (parser->pCipherCtx)
 		{
-			DEBUG("VHD[%X]: Write request: %X blocks starting from %X", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
+			DEBUG("VHD[%X]: Write request: %X blocks starting from %X\n", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
 
 			pMdl = pPacket->pMdl = AllocateInnerMdl(pMdl);
 
@@ -567,7 +598,7 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 	case SCSI_OP_CODE_READ_16:
 		if (parser->pCipherCtx)
 		{
-			DEBUG("VHD[%X]: Read request: %X blocks starting from %X", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
+			DEBUG("VHD[%X]: Read request: %X blocks starting from %X\n", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
 		}
 		break;
 	}

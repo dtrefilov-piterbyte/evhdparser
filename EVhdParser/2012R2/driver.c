@@ -58,8 +58,24 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	ULONG ulIndex;
 	NTSTATUS status = STATUS_SUCCESS;
 	VstorParserInfo ParserInfo = { 0 };
+	RTL_OSVERSIONINFOW VersionInfo = { 0 };
+	VersionInfo.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 
 	UNREFERENCED_PARAMETER(pRegistryPath);
+	status = RtlGetVersion(&VersionInfo);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("Failed to get windows version information: %d\n", status);
+		return status;
+	}
+
+	// This version of driver is only supported by Windows Server 2012 R2
+	if (VersionInfo.dwMajorVersion != 6 || VersionInfo.dwMinorVersion != 3)
+	{
+		DbgPrint("Running on an unsupported platform: %d.%d.%d\n", VersionInfo.dwMajorVersion,
+			VersionInfo.dwMinorVersion, VersionInfo.dwBuildNumber);
+		return status = STATUS_NOT_SUPPORTED;
+	}
 
 	WPP_MAIN_CB.Type = 0;
 	WPP_MAIN_CB.NextDevice = NULL;

@@ -60,7 +60,6 @@ CipherEngine XorCipherEngine =
 {
 	.dwBlockSize = 0,
 	.dwKeySize = 0,
-	.dwIVSize = 0,
 	.pfnCreate = XorCipherCreate,
 	.pfnDestroy = XorCipherDestroy,
 	.pfnInit = XorCipherInit,

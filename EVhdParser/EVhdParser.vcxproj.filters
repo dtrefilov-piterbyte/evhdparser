@@ -51,6 +51,9 @@
     <ClCompile Include="cipher.c">
       <Filter>cipher</Filter>
     </ClCompile>
+    <ClCompile Include="AesCipher.c">
+      <Filter>cipher</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="2012R2\driver.h">
@@ -90,6 +93,9 @@
       <Filter>cipher</Filter>
     </ClInclude>
     <ClInclude Include="XorCipher.h">
+      <Filter>cipher</Filter>
+    </ClInclude>
+    <ClInclude Include="AesCipher.h">
       <Filter>cipher</Filter>
     </ClInclude>
   </ItemGroup>

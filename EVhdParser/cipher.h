@@ -1,6 +1,15 @@
 #pragma once
 #include <ntifs.h>
 
+typedef enum {
+	ChainingMode_Unknown,
+	ChainingMode_CBC,
+	ChainingMode_ECB,
+	ChainingMode_CFB,
+	ChainingMode_CCM,
+	ChainingMode_GCM
+} EChainingMode;
+
 /** Creates cipher instance */
 typedef NTSTATUS(*CipherCreate_t)(PVOID cipherConfig, PVOID *pOutContext);
 /** Initializes cipher with the given key and iv */
@@ -15,7 +24,6 @@ typedef NTSTATUS(*CipherDestroy_t)(PVOID ctx);
 typedef struct _CipherEngine {
 	ULONG32			dwBlockSize;
 	ULONG32			dwKeySize;
-	ULONG32			dwIVSize;
 	CipherCreate_t	pfnCreate;
 	CipherDestroy_t	pfnDestroy;
 	CipherInit_t	pfnInit;
@@ -26,7 +34,7 @@ typedef struct _CipherEngine {
 typedef enum
 {
 	ECipherAlgo_Xor,
-	ECipherAlgo_AES,
+	ECipherAlgo_AES128,
 	ECipherAlgo_Gost89
 } ECipherAlgo;
 
