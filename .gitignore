@@ -1,4 +1,5 @@
 /*.opensdf
 /*.sdf
 /*.suo
+*.vcxproj.user
 x64
