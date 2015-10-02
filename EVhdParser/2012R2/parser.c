@@ -5,7 +5,7 @@
 #include <ntddscsi.h>
 #include "Vdrvroot.h"
 #include "Guids.h"
-#include "AesCipher.h"
+#include "Gost89Cipher.h"
 
 
 static const ULONG EvhdPoolTag = 'VVpp';
@@ -14,8 +14,9 @@ static const ULONG EvhdPoolTag = 'VVpp';
 DEFINE_GUID(GUID_TEST_VHD_DISK_ID,
 	0x1f3afa79, 0x7f5b, 0x4e8b, 0xbc, 0x99, 0xf0, 0x65, 0xc8, 0x1e, 0x96, 0xf6);
 
-UCHAR rgbTestAes128Key[16] = {
-	162,  101,   19,  209,  154,  134,  198,   11,   40,  242,  103,   43,   26,    9,  159,   59
+UCHAR rgbTest256Key[32] = {
+	162,  101,   19,  209,  154,  134,  198,   11,   40,  242,  103,   43,   26,    9,  159,   59,
+	207,  158,	 169, 51,	159,  155,  93,    122,  252, 74,   104,   90,   192,   0,  60,    38
 };
 
 static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
@@ -51,15 +52,16 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 
 	if (0 == memcmp(&Response.guid, &GUID_TEST_VHD_DISK_ID, sizeof(GUID)))
 	{
-#if 0
-		Aes128CipherConfig config = { 
-			.ChainingMode = ChainingMode_CBC
+#if 1
+		Gost89CipherConfig config = {
+			.ChainingMode = ChainingMode_CFB,
+			.SBlock = ESBlock_tc26_gost28147_param_Z
 		};
+		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_Gost89);   
 #else
-		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_AES128);
 		ULONG32 config = 0xCCCCCCCC;
-#endif
 		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_Xor);
+#endif
 		if (!parser->pCipherEngine)
 		{
 			DEBUG("Cipher engine is unavailable\n");
@@ -68,7 +70,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		status = parser->pCipherEngine->pfnCreate(&config, &parser->pCipherCtx);
 		if (NT_SUCCESS(status))
 		{
-			status = parser->pCipherEngine->pfnInit(parser->pCipherCtx, rgbTestAes128Key, NULL);
+			status = parser->pCipherEngine->pfnInit(parser->pCipherCtx, rgbTest256Key, NULL);
 			if (!NT_SUCCESS(status))
 			{
 				parser->pCipherEngine->pfnDestroy(parser->pCipherCtx);

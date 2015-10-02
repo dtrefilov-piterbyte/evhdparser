@@ -6,6 +6,7 @@ typedef enum {
 	ChainingMode_CBC,
 	ChainingMode_ECB,
 	ChainingMode_CFB,
+	ChainingMode_OFB,
 	ChainingMode_CCM,
 	ChainingMode_GCM
 } EChainingMode;
@@ -37,13 +38,5 @@ typedef enum
 	ECipherAlgo_AES128,
 	ECipherAlgo_Gost89
 } ECipherAlgo;
-
-typedef enum
-{
-	ECipherMode_ECB,
-	ECipherMode_CBC,
-	ECipherMode_CFB,
-	ECipherMode_OFB,
-} ECipherMode;
 
 CipherEngine *CipherEngineGet(ECipherAlgo eCipherAlgo);

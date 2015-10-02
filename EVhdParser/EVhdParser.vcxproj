@@ -231,7 +231,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
     <Link>
-      <AdditionalDependencies>Bcrypt.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
@@ -274,6 +274,7 @@
     </ClCompile>
     <ClCompile Include="AesCipher.c" />
     <ClCompile Include="cipher.c" />
+    <ClCompile Include="Gost89Cipher.c" />
     <ClCompile Include="utils.c" />
     <ClCompile Include="Vdrvroot.c" />
     <ClCompile Include="XorCipher.c" />
@@ -305,6 +306,7 @@
     </ClInclude>
     <ClInclude Include="AesCipher.h" />
     <ClInclude Include="cipher.h" />
+    <ClInclude Include="Gost89Cipher.h" />
     <ClInclude Include="Guids.h" />
     <ClInclude Include="Ioctl.h" />
     <ClInclude Include="ScsiOp.h" />

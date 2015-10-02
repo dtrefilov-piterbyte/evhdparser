@@ -71,6 +71,8 @@ NTSTATUS Aes128CipherDestroy(PVOID ctx)
 		BCryptDestroyKey(aesCipher->hKey);
 	if (aesCipher->hAlgorithm)
 		BCryptCloseAlgorithmProvider(aesCipher->hAlgorithm, 0);
+	if (aesCipher->pbKeyObject)
+		ExFreePoolWithTag(aesCipher->pbKeyObject, AesCipherTag);
 	ExFreePoolWithTag(aesCipher, AesCipherTag);
 
 	return status;
@@ -80,7 +82,7 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
-	ULONG cbData = 0, cbBlockLen = 0, cbKeyLen = 0;
+	ULONG cbData = 0, cbBlockLen = 0;
 
 	if (!aesCipher || aesCipher->hAlgorithm == NULL)
 	{
@@ -94,7 +96,7 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 	}
 	if (!NT_SUCCESS(status = BCryptGetProperty(
 		aesCipher->hAlgorithm,
-		BCRYPT_KEY_OBJECT_LENGTH,
+		BCRYPT_OBJECT_LENGTH,
 		(PUCHAR)&aesCipher->cbKeyObject,
 		sizeof(ULONG),
 		&cbData,
@@ -122,23 +124,6 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 		return STATUS_INVALID_BUFFER_SIZE;
 	}
 
-	if (!NT_SUCCESS(status = BCryptGetProperty(
-		aesCipher->hAlgorithm,
-		BCRYPT_KEY_LENGTH,
-		(PUCHAR)&cbKeyLen,
-		sizeof(ULONG),
-		&cbData,
-		0)))
-	{
-		DEBUG("Aes128Cipher: Could not get key length");
-		return status;
-	}
-	if (cbKeyLen != Aes128CipherEngine.dwKeySize)
-	{
-		DEBUG("Aes128Cipher: Key size do not match");
-		return STATUS_INVALID_BUFFER_SIZE;
-	}
-
 	aesCipher->pbKeyObject = ExAllocatePoolWithTag(NonPagedPoolNx, aesCipher->cbKeyObject, AesCipherTag);
 	if (!aesCipher->pbKeyObject)
 	{
@@ -152,7 +137,7 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 		aesCipher->pbKeyObject,
 		aesCipher->cbKeyObject,
 		(PUCHAR)key,
-		cbKeyLen,
+		Aes128CipherEngine.dwKeySize,
 		0)))
 	{
 		DEBUG("Aes128Cipher: Could not generate key");
@@ -179,14 +164,16 @@ NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T 
 		return STATUS_INVALID_HANDLE;
 	}
 	ULONG cbResult = 0;
+	UCHAR iv[16];
+	memmove(iv, aesCipher->iv, sizeof(iv));
 
 	if (!NT_SUCCESS(status = BCryptEncrypt(
 		aesCipher->hKey,
 		(PUCHAR)plain,
 		(ULONG)size,
 		NULL,
-		aesCipher->iv,
-		Aes128CipherEngine.dwBlockSize,
+		iv,
+		sizeof(iv),
 		(PUCHAR)cipher,
 		(ULONG)size,
 		&cbResult,
@@ -208,15 +195,17 @@ NTSTATUS Aes128CipherDecrypt(PVOID ctx, CONST VOID *cipher, VOID *plain, SIZE_T 
 		return STATUS_INVALID_HANDLE;
 	}
 	ULONG cbResult = 0;
+	UCHAR iv[16];
+	memmove(iv, aesCipher->iv, sizeof(iv));
 
 	if (!NT_SUCCESS(status = BCryptDecrypt(
 		aesCipher->hKey,
-		(PUCHAR)plain,
+		(PUCHAR)cipher,
 		(ULONG)size,
 		NULL,
-		aesCipher->iv,
-		Aes128CipherEngine.dwBlockSize,
-		(PUCHAR)cipher,
+		iv,
+		sizeof(iv),
+		(PUCHAR)plain,
 		(ULONG)size,
 		&cbResult,
 		0)))
