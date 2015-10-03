@@ -16,6 +16,7 @@ typedef struct
 		XorCipherOptions Xor;
 		Aes128CipherOptions Aes128;
 		Gost89CipherOptions Gost89;
+		UCHAR Reserved[0x100];
 	} Opts;
 } EVhdVirtualDiskCipherConfigRequest;
 

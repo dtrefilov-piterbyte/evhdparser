@@ -439,7 +439,10 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 
 failure_cleanup:
 	if (FileHandle)
+	{
 		ZwClose(FileHandle);
+		parser->FileHandle = NULL;
+	}
 	if (parser)
 	{
 		EVhdCloseDisk(parser);

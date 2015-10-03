@@ -43,10 +43,13 @@ NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *
 		{
 		case ECipherAlgo_Xor:
 			engine = &XorCipherEngine;
+			break;
 		case ECipherAlgo_AES128:
 			engine = &Aes128CipherEngine;
+			break;
 		case ECipherAlgo_Gost89:
 			engine = &Gost89CipherEngine;
+			break;
 		}
 
 		if (engine)

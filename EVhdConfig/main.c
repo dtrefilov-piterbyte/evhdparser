@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		printf("Failed to open shim driver\n");
+		printf("Failed to open shim driver device\n");
 	}
 
 	return 0;
