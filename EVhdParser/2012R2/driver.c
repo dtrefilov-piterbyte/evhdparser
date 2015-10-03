@@ -15,32 +15,12 @@ DEFINE_GUID(GUID_EVHD_PARSER_ID,
 	0xf916c826, 0xf0f5, 0x4cd9, 0xbe, 0x68, 0x4f, 0xd6, 0x38, 0xcf, 0x9a, 0x53);
 #endif
 
-static DEVICE_OBJECT WPP_MAIN_CB = { 0 };
-static PDEVICE_OBJECT WPP_GLOBAL_Control = NULL;
-
-static void WppInitKm()
-{
-	if (WPP_GLOBAL_Control != &WPP_MAIN_CB)
-	{
-		WPP_GLOBAL_Control = &WPP_MAIN_CB;
-		//IoWMIRegistrationControl(&WPP_MAIN_CB, WMIREG_ACTION_REGISTER);
-	}
-}
-
-static void WppCleanupKm()
-{
-	if (WPP_GLOBAL_Control == &WPP_MAIN_CB)
-	{
-		//IoWMIRegistrationControl(&WPP_MAIN_CB, WMIREG_ACTION_DEREGISTER);
-		WPP_GLOBAL_Control = NULL;
-	}
-}
+static PDEVICE_OBJECT pDeviceObject = NULL;
 
 /** Driver unload routine */
 void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 {
 	UNREFERENCED_PARAMETER(pDriverObject);
-	WppCleanupKm();
 }
 
 /** Default major function dispatcher */
@@ -52,6 +32,9 @@ static NTSTATUS DispatchCreate(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 /** Close major function dispatcher */
 static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 
+/** Device control major function dispatcher */
+static NTSTATUS DispatchControl(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
+
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
@@ -59,13 +42,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	NTSTATUS status = STATUS_SUCCESS;
 	VstorParserInfo ParserInfo = { 0 };
 	RTL_OSVERSIONINFOW VersionInfo = { 0 };
+	UNICODE_STRING DeviceName;
 	VersionInfo.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 
 	UNREFERENCED_PARAMETER(pRegistryPath);
 	status = RtlGetVersion(&VersionInfo);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("Failed to get windows version information: %d\n", status);
+		DbgPrint("Failed to get windows version information: %X\n", status);
 		return status;
 	}
 
@@ -77,13 +61,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		return status = STATUS_NOT_SUPPORTED;
 	}
 
-	WPP_MAIN_CB.Type = 0;
-	WPP_MAIN_CB.NextDevice = NULL;
-	WPP_MAIN_CB.CurrentIrp = NULL;
-	WPP_MAIN_CB.DriverObject = pDriverObject;
-	WPP_MAIN_CB.ReferenceCount = 1;
+	RtlInitUnicodeString(&DeviceName, L"\\Device\\EVhdParser");
 
-	WppInitKm();
+	status = IoCreateDevice(pDriverObject, 0, &DeviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &pDeviceObject);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("Failed to create device: %X\n", status);
+		return status;
+	}
 
 	for (ulIndex = 0; ulIndex < IRP_MJ_MAXIMUM_FUNCTION; ++ulIndex)
 	{
@@ -92,7 +77,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	pDriverObject->MajorFunction[IRP_MJ_CREATE] = DispatchCreate;
 	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchClose;
-
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchControl;
 
 	pDriverObject->DriverUnload = EVhdDriverUnload;
 
@@ -154,6 +139,19 @@ static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 
 	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
 	DbgPrint("DispatchClose called\n");
+
+	pIrp->IoStatus.Status = STATUS_SUCCESS;
+	pIrp->IoStatus.Information = 0;
+	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+	return STATUS_SUCCESS;
+}
+
+static NTSTATUS DispatchControl(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
+{
+	UNREFERENCED_PARAMETER(pDeviceObject);
+
+	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;		
+	DbgPrint("DispatchControl called\n");
 
 	pIrp->IoStatus.Status = STATUS_SUCCESS;
 	pIrp->IoStatus.Information = 0;

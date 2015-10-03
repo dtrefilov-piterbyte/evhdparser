@@ -46,7 +46,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		&Response, sizeof(MetaInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
+		DEBUG("Failed to retrieve virtual disk identifier. 0x%0X\n", status);
 		return status;
 	}
 
@@ -101,13 +101,6 @@ static PMDL AllocateInnerMdl(PMDL pSourceMdl)
 	SkipBytes.QuadPart = 0;
 
 	PMDL pNewMdl = MmAllocatePagesForMdlEx(LowAddress, HighAddress, SkipBytes, pSourceMdl->ByteCount, MmCached, MM_DONT_ZERO_ALLOCATION);
-	PVOID pData = pNewMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
-		pNewMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pNewMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
-	PVOID pSourceData = pSourceMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
-		pSourceMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pSourceMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
-												   
-	memmove(pData, pSourceData, pSourceMdl->ByteCount);
-
 	pNewMdl->Next = pSourceMdl;
 
 	return pNewMdl;
@@ -121,43 +114,60 @@ static PMDL FreeInnerMdl(PMDL pMdl)
 	return pSourceMdl;
 }
 
-static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pMdl, SIZE_T size, BOOLEAN Encrypt)
+static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, BOOLEAN Encrypt)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	BOOLEAN mapedMdl = FALSE;
-	PVOID pData = NULL;
+	BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
+	PVOID pSource = NULL, pTarget = NULL;
 	// TODO: use sector size from vhdmp
 	CONST SIZE_T SectorSize = 512;
 	SIZE_T SectorOffset = 0;
 
-	if (!parser || !pMdl)
+	if (!parser || !pSourceMdl || !pTargetMdl)
 		return STATUS_INVALID_PARAMETER;
 	// have no cipher
 	if (!parser->pCipherCtx)
 		return STATUS_SUCCESS;
 
-	mapedMdl = 0 == (pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+	mappedSourceMdl = 0 == (pSourceMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
 
-	pData = mapedMdl ? MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
-		: pMdl->MappedSystemVa;
-	if (!pData)
+	pSource = mappedSourceMdl ? MmMapLockedPagesSpecifyCache(pSourceMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
+		: pSourceMdl->MappedSystemVa;
+	if (!pSource)
 		return STATUS_INSUFFICIENT_RESOURCES;
+
+	if (pSourceMdl != pTargetMdl)
+	{
+		mappedTargetMdl = 0 == (pTargetMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+
+		pTarget = mappedTargetMdl ? MmMapLockedPagesSpecifyCache(pTargetMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
+			: pTargetMdl->MappedSystemVa;
+		if (!pTarget)
+			return STATUS_INSUFFICIENT_RESOURCES;
+	}
+	else
+	{
+		pTarget = pSource;
+	}
+
 	ASSERT(0 == size % SectorSize);
 
 	DEBUG("VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
 
 	for (SectorOffset = 0; SectorOffset < size; SectorOffset += SectorSize)
 	{
-		PUCHAR pSector = (PUCHAR)pData + SectorOffset;
+		PUCHAR pSourceSector = (PUCHAR)pSource + SectorOffset;
+		PUCHAR pTargetSector = (PUCHAR)pTarget + SectorOffset;
 		status = (Encrypt ? parser->pCipherEngine->pfnEncrypt : parser->pCipherEngine->pfnDecrypt)(parser->pCipherCtx, 
-			pSector, pSector, SectorSize);
+			pSourceSector, pTargetSector, SectorSize);
 		if (!NT_SUCCESS(status))
 			break;
 	}
 
-
-	if (mapedMdl && pData)
-		MmUnmapLockedPages(pData, pMdl);
+	if (mappedSourceMdl && pSourceMdl)
+		MmUnmapLockedPages(pSource, pSourceMdl);
+	if (mappedTargetMdl && pTargetMdl)
+		MmUnmapLockedPages(pTarget, pTargetMdl);
 	return status;
 }
 
@@ -265,7 +275,7 @@ static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
 			{
 				DEBUG("VHD[%X]: Read request complete: %X blocks starting from %X\n",
 					PsGetCurrentThreadId(), wNumSectors, dwStartingSector);
-				EvhdCryptBlocks(pPacket->pInner->pParser, pPacket->pMdl, pPacket->pInner->Srb.DataTransferLength, FALSE);
+				EvhdCryptBlocks(pPacket->pInner->pParser, pPacket->pMdl, pPacket->pMdl, pPacket->pInner->Srb.DataTransferLength, FALSE);
 			}
 			break;
 		case SCSI_OP_CODE_WRITE_6:
@@ -451,7 +461,6 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	//if (!NT_SUCCESS(status))
 	//	goto failure_cleanup;
 
-	// some kind of linked list
 	parser->pVstorInterface = vstorInterface;
 
 	status = EvhdInitCipher(parser, diskPath);
@@ -586,9 +595,11 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 		{
 			DEBUG("VHD[%X]: Write request: %X blocks starting from %X\n", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
 
-			pMdl = pPacket->pMdl = AllocateInnerMdl(pMdl);
+			pPacket->pMdl = AllocateInnerMdl(pMdl);
 
-			status = EvhdCryptBlocks(parser, pMdl, pRequest->DataTransferLength, TRUE);
+			status = EvhdCryptBlocks(parser, pMdl, pPacket->pMdl, pRequest->DataTransferLength, TRUE);
+
+			pMdl = pPacket->pMdl;
 
 			if (pMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
 				MmUnmapLockedPages(pMdl->MappedSystemVa, pMdl);
