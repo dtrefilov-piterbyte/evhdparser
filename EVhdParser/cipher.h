@@ -1,20 +1,11 @@
 #pragma once
 #include <ntifs.h>
-
-typedef enum {
-	ChainingMode_Unknown,
-	ChainingMode_CBC,
-	ChainingMode_ECB,
-	ChainingMode_CFB,
-	ChainingMode_OFB,
-	ChainingMode_CCM,
-	ChainingMode_GCM
-} EChainingMode;
+#include "CipherOpts.h"
 
 /** Creates cipher instance */
 typedef NTSTATUS(*CipherCreate_t)(PVOID cipherConfig, PVOID *pOutContext);
-/** Initializes cipher with the given key and iv */
-typedef NTSTATUS(*CipherInit_t)(PVOID ctx, CONST VOID *key, CONST VOID *iv);
+/** Initializes cipher with the given iv */
+typedef NTSTATUS(*CipherInit_t)(PVOID ctx, CONST VOID *iv);
 /** Cipher function performing data encryption */
 typedef NTSTATUS(*CipherEnc_t)(PVOID ctx, CONST VOID *clear, VOID *cipher, SIZE_T size);
 /** Cipher function performing data decryption */
@@ -32,11 +23,9 @@ typedef struct _CipherEngine {
 	CipherDec_t		pfnDecrypt;
 } CipherEngine;
 
-typedef enum
-{
-	ECipherAlgo_Xor,
-	ECipherAlgo_AES128,
-	ECipherAlgo_Gost89
-} ECipherAlgo;
+NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *pOutCipherContext);
 
-CipherEngine *CipherEngineGet(ECipherAlgo eCipherAlgo);
+NTSTATUS CipherInit();
+NTSTATUS CipherCleanup();
+
+NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts);

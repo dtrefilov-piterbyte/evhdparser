@@ -7,9 +7,14 @@ const ULONG32 XorCipherTag = 'Xor ';
 // xmmintrin workaround
 int  _fltused = 0;
 
+typedef struct {
+	ULONG32		dwXorVal;
+} XorCipherContext;
+
 NTSTATUS XorCipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 {
 	XorCipherContext *xorCipher = NULL;
+	XorCipherOptions *xorOpts = (XorCipherOptions *)cipherConfig;
 	if (!cipherConfig || !pOutContext)
 		return STATUS_INVALID_PARAMETER;
 	xorCipher = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(XorCipherContext), XorCipherTag);
@@ -18,7 +23,7 @@ NTSTATUS XorCipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		DEBUG("Failed to allocate memory for XorCipherContext\n");
 		return STATUS_NO_MEMORY;
 	}
-	xorCipher->dwXorVal = *(PULONG32)cipherConfig;
+	xorCipher->dwXorVal = xorOpts->XorMixingValue;
 	*pOutContext = xorCipher;
 	return STATUS_SUCCESS;
 }
@@ -31,10 +36,9 @@ NTSTATUS XorCipherDestroy(PVOID ctx)
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS XorCipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
+NTSTATUS XorCipherInit(PVOID ctx, CONST VOID *iv)
 {
 	UNREFERENCED_PARAMETER(ctx);
-	UNREFERENCED_PARAMETER(key);
 	UNREFERENCED_PARAMETER(iv);
 	return STATUS_SUCCESS;
 }

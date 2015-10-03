@@ -7,8 +7,9 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	Aes128CipherContext *aesCipher = NULL;
-	Aes128CipherConfig *aesConfig = cipherConfig;
+	Aes128CipherOptions *aesConfig = cipherConfig;
 	PWSTR pszChainMode = NULL;
+	ULONG cbData = 0, cbBlockLen = 0;
 
 	if (!cipherConfig || !pOutContext)
 		return STATUS_INVALID_PARAMETER;
@@ -59,41 +60,6 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		DEBUG("Aes128Cipher: Could not set chaingin mode");
 	}
 
-	*pOutContext = aesCipher;
-	return STATUS_SUCCESS;
-}
-
-NTSTATUS Aes128CipherDestroy(PVOID ctx)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
-	if (aesCipher->hKey)
-		BCryptDestroyKey(aesCipher->hKey);
-	if (aesCipher->hAlgorithm)
-		BCryptCloseAlgorithmProvider(aesCipher->hAlgorithm, 0);
-	if (aesCipher->pbKeyObject)
-		ExFreePoolWithTag(aesCipher->pbKeyObject, AesCipherTag);
-	ExFreePoolWithTag(aesCipher, AesCipherTag);
-
-	return status;
-}
-
-NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
-	ULONG cbData = 0, cbBlockLen = 0;
-
-	if (!aesCipher || aesCipher->hAlgorithm == NULL)
-	{
-		DEBUG("Aes128Cipher: invalid cipher");
-		return STATUS_INVALID_HANDLE;
-	}
-	if (!key)
-	{
-		DEBUG("Aes128Cipher: The key cannot be null");
-		return STATUS_INVALID_PARAMETER;
-	}
 	if (!NT_SUCCESS(status = BCryptGetProperty(
 		aesCipher->hAlgorithm,
 		BCRYPT_OBJECT_LENGTH,
@@ -136,7 +102,7 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 		&aesCipher->hKey,
 		aesCipher->pbKeyObject,
 		aesCipher->cbKeyObject,
-		(PUCHAR)key,
+		aesConfig->Key,
 		Aes128CipherEngine.dwKeySize,
 		0)))
 	{
@@ -146,9 +112,38 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
 		return status;
 	}
 
+	*pOutContext = aesCipher;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS Aes128CipherDestroy(PVOID ctx)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
+	if (aesCipher->hKey)
+		BCryptDestroyKey(aesCipher->hKey);
+	if (aesCipher->hAlgorithm)
+		BCryptCloseAlgorithmProvider(aesCipher->hAlgorithm, 0);
+	if (aesCipher->pbKeyObject)
+		ExFreePoolWithTag(aesCipher->pbKeyObject, AesCipherTag);
+	ExFreePoolWithTag(aesCipher, AesCipherTag);
+
+	return status;
+}
+
+NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *iv)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
+
+	if (!aesCipher || aesCipher->hAlgorithm == NULL)
+	{
+		DEBUG("Aes128Cipher: invalid cipher");
+		return STATUS_INVALID_HANDLE;
+	}
 	if (iv)
 	{
-		memmove(aesCipher->iv, iv, cbBlockLen);
+		memmove(aesCipher->iv, iv, sizeof(aesCipher->iv));
 	}
 
 	return status;

@@ -48,7 +48,7 @@ static const ULONG32 PoolTag = 'Gost';
 
 NTSTATUS Gost89CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 {
-	Gost89CipherConfig *gostConfig = (Gost89CipherConfig *)cipherConfig;
+	Gost89CipherOptions *gostConfig = (Gost89CipherOptions *)cipherConfig;
 	Gost89CipherContext *c = NULL;
 	const gost_subst_block *sBlock = NULL;
 	BOOLEAN bIsCfb = FALSE;
@@ -98,9 +98,9 @@ NTSTATUS Gost89CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		return STATUS_NO_MEMORY;
 	}
 	c->bIsCfb = bIsCfb;
-	memset(&c->k, 0, sizeof(c->k));
-	memset(&c->iv, 0, sizeof(c->iv));
+	memcpy(&c->k, gostConfig->Key, sizeof(c->k));
 	kboxinit(c, sBlock);
+	gost_key(c, (const byte *)gostConfig->Key);
 
 	*pOutContext = c;
 	return STATUS_SUCCESS;
@@ -115,15 +115,15 @@ NTSTATUS Gost89CipherDestroy(PVOID ctx)
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS Gost89CipherInit(PVOID ctx, CONST VOID *key, CONST VOID *iv)
+NTSTATUS Gost89CipherInit(PVOID ctx, CONST VOID *iv)
 {
 	Gost89CipherContext *gostCtx = (Gost89CipherContext *)ctx;
 	if (!ctx)
 		return STATUS_INVALID_PARAMETER;
-	if (!key && !iv)
-		return STATUS_INVALID_PARAMETER;
-	if (iv) memmove(&gostCtx->iv, iv, sizeof(gostCtx->iv));
-	if (key) gost_key(gostCtx, (const byte *)key);
+	if (iv)
+	{
+		memmove(&gostCtx->iv, iv, sizeof(gostCtx->iv));
+	}
 	return STATUS_SUCCESS;
 }
 

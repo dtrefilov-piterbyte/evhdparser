@@ -3,6 +3,7 @@
 #include "Vstor.h"
 #include <initguid.h>
 #include "parser.h"
+#include "Control.h"
 
 #if 0
 // {860ECCBC-6E7D-4A17-B181-81D64AF02170}
@@ -15,12 +16,24 @@ DEFINE_GUID(GUID_EVHD_PARSER_ID,
 	0xf916c826, 0xf0f5, 0x4cd9, 0xbe, 0x68, 0x4f, 0xd6, 0x38, 0xcf, 0x9a, 0x53);
 #endif
 
+#define DEVICE_NAME L"\\Device\\EVhdParser"
+#define DOSDEVICE_NAME L"\\DosDevices\\EVhdParser"
+
 static PDEVICE_OBJECT pDeviceObject = NULL;
 
 /** Driver unload routine */
 void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 {
 	UNREFERENCED_PARAMETER(pDriverObject);
+	UNICODE_STRING DosDeviceName;
+	RtlInitUnicodeString(&DosDeviceName, DOSDEVICE_NAME);
+	IoDeleteSymbolicLink(&DosDeviceName);
+	if (pDeviceObject)
+	{
+		IoDeleteDevice(pDeviceObject);
+		pDeviceObject = NULL;
+	}
+	CipherCleanup();
 }
 
 /** Default major function dispatcher */
@@ -42,7 +55,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	NTSTATUS status = STATUS_SUCCESS;
 	VstorParserInfo ParserInfo = { 0 };
 	RTL_OSVERSIONINFOW VersionInfo = { 0 };
-	UNICODE_STRING DeviceName;
+	UNICODE_STRING DeviceName, DosDeviceName;
 	VersionInfo.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 
 	UNREFERENCED_PARAMETER(pRegistryPath);
@@ -61,12 +74,28 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		return status = STATUS_NOT_SUPPORTED;
 	}
 
-	RtlInitUnicodeString(&DeviceName, L"\\Device\\EVhdParser");
+	status = CipherInit();
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("Failed to initialize cipher: %X\n", status);
+		return status;
+	}
 
-	status = IoCreateDevice(pDriverObject, 0, &DeviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &pDeviceObject);
+	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
+	RtlInitUnicodeString(&DosDeviceName, DOSDEVICE_NAME);
+
+	status = IoCreateDevice(pDriverObject, 0, &DeviceName, FILE_DEVICE_DISK_FILE_SYSTEM, 
+		FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
 	if (!NT_SUCCESS(status))
 	{
 		DbgPrint("Failed to create device: %X\n", status);
+		return status;
+	}
+
+	status = IoCreateSymbolicLink(&DosDeviceName, &DeviceName);
+	if (!NT_SUCCESS(status))
+	{
+		DbgPrint("Failed to create dos device link: %X\n", status);
 		return status;
 	}
 
@@ -149,11 +178,25 @@ static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 static NTSTATUS DispatchControl(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 {
 	UNREFERENCED_PARAMETER(pDeviceObject);
+	NTSTATUS IoStatus = STATUS_SUCCESS;
 
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;		
-	DbgPrint("DispatchControl called\n");
+	PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(pIrp);
 
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
+	switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
+	{
+	case IOCTL_VIRTUAL_DISK_SET_CIPHER:
+		if (sizeof(EVhdVirtualDiskCipherConfigRequest) ==
+			IrpSp->Parameters.DeviceIoControl.InputBufferLength)
+		{
+			EVhdVirtualDiskCipherConfigRequest *request = pIrp->AssociatedIrp.SystemBuffer;
+			IoStatus = SetCipherOpts(&request->DiskId, request->Algorithm, &request->Opts);
+		}
+		else
+			IoStatus = STATUS_INVALID_BUFFER_SIZE;
+		break;
+	}
+
+	pIrp->IoStatus.Status = IoStatus;
 	pIrp->IoStatus.Information = 0;
 	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
 	return STATUS_SUCCESS;

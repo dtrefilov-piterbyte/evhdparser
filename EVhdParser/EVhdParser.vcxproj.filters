@@ -104,5 +104,11 @@
     <ClInclude Include="Gost89Cipher.h">
       <Filter>cipher</Filter>
     </ClInclude>
+    <ClInclude Include="Control.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="CipherOpts.h">
+      <Filter>common</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

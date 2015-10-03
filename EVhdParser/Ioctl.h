@@ -1,6 +1,5 @@
 #include <ntddk.h>
-#ifndef _NTDDK_
-#include <virtdisk.h>
+#ifndef _WINKRNL
 #include <winioctl.h>
 #else
 #include <sddl.h>

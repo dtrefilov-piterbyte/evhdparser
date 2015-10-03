@@ -24,7 +24,7 @@ NTSTATUS EvhdRemoveVhd(ParserInstance *parser, PVOID systemBuffer)
 	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
 	pStackFrame->MinorFunction = 0;
 	pStackFrame->Flags = 0;
-	pStackFrame->Control = 0;										// ??
+	pStackFrame->Control = 0;
 	IoSynchronousCallDriver(pDeviceObject, parser->pIrp);
 	status = parser->pIrp->IoStatus.Status;
 	FltReleasePushLockEx(&parser->IoLock, FLT_PUSH_LOCK_ENABLE_AUTO_BOOST);

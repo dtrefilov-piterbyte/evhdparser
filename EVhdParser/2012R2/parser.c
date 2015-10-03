@@ -10,15 +10,6 @@
 
 static const ULONG EvhdPoolTag = 'VVpp';
 
-// TODO: hardcoded test disk identifier
-DEFINE_GUID(GUID_TEST_VHD_DISK_ID,
-	0x1f3afa79, 0x7f5b, 0x4e8b, 0xbc, 0x99, 0xf0, 0x65, 0xc8, 0x1e, 0x96, 0xf6);
-
-UCHAR rgbTest256Key[32] = {
-	162,  101,   19,  209,  154,  134,  198,   11,   40,  242,  103,   43,   26,    9,  159,   59,
-	207,  158,	 169, 51,	159,  155,  93,    122,  252, 74,   104,   90,   192,   0,  60,    38
-};
-
 static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
 {
 	UNREFERENCED_PARAMETER(diskPath);
@@ -49,35 +40,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		DEBUG("Failed to retrieve virtual disk identifier. 0x%0X\n", status);
 		return status;
 	}
-
-	if (0 == memcmp(&Response.guid, &GUID_TEST_VHD_DISK_ID, sizeof(GUID)))
-	{
-#if 1
-		Gost89CipherConfig config = {
-			.ChainingMode = ChainingMode_CFB,
-			.SBlock = ESBlock_tc26_gost28147_param_Z
-		};
-		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_Gost89);   
-#else
-		ULONG32 config = 0xCCCCCCCC;
-		parser->pCipherEngine = CipherEngineGet(ECipherAlgo_Xor);
-#endif
-		if (!parser->pCipherEngine)
-		{
-			DEBUG("Cipher engine is unavailable\n");
-			return status;
-		}
-		status = parser->pCipherEngine->pfnCreate(&config, &parser->pCipherCtx);
-		if (NT_SUCCESS(status))
-		{
-			status = parser->pCipherEngine->pfnInit(parser->pCipherCtx, rgbTest256Key, NULL);
-			if (!NT_SUCCESS(status))
-			{
-				parser->pCipherEngine->pfnDestroy(parser->pCipherCtx);
-				parser->pCipherCtx = NULL;
-			}
-		}
-	}
+	status = CipherEngineGet(&Response.guid, &parser->pCipherEngine, &parser->pCipherCtx);
 	return status;
 }
 

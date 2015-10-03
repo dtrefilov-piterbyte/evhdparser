@@ -220,29 +220,53 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <Link>
-      <AdditionalDependencies>FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Debug|x64'">
     <Link />
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <Link />
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
     <Link>
-      <AdditionalDependencies>FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
     <Link>
-      <AdditionalDependencies>FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile />
+    <ClCompile>
+      <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <Inf Include="EVhdParser.inf" />
@@ -306,6 +330,8 @@
     </ClInclude>
     <ClInclude Include="AesCipher.h" />
     <ClInclude Include="cipher.h" />
+    <ClInclude Include="CipherOpts.h" />
+    <ClInclude Include="Control.h" />
     <ClInclude Include="Gost89Cipher.h" />
     <ClInclude Include="Guids.h" />
     <ClInclude Include="Ioctl.h" />
