@@ -11,7 +11,7 @@ static NTSTATUS EvhdInitialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, H
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	MetaInfoResponse resp = { 0 };
-	EMetaInfoType req = EMetaInfoType_Geometry;
+	EDiskInfoType req = EDiskInfoType_Geometry;
 
 	// Never occurs for any input data
 	if (0 == (dwFlags & 0x80000))

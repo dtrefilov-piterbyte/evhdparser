@@ -15,7 +15,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 	UNREFERENCED_PARAMETER(diskPath);
 	NTSTATUS status = STATUS_SUCCESS;
 	MetaInfoResponse Response = { 0 };
-	EMetaInfoType Request = EMetaInfoType_ParserInfo;
+	EDiskInfoType Request = EDiskInfoType_ParserInfo;
 	EDiskFormat DiskFormat = EDiskFormat_Unknown;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 		&Response, sizeof(MetaInfoResponse));
@@ -32,7 +32,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		return status;
 	}
 
-	Request = EMetaInfoType_Page83Data;
+	Request = EDiskInfoType_Page83Data;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 		&Response, sizeof(MetaInfoResponse));
 	if (!NT_SUCCESS(status))
@@ -138,7 +138,7 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	MetaInfoResponse resp = { 0 };
-	EMetaInfoType req = EMetaInfoType_NumSectors;
+	EDiskInfoType req = EDiskInfoType_NumSectors;
 
 	parser->pVhdmpFileObject = pFileObject;
 	parser->FileHandle = hFileHandle;
@@ -602,7 +602,7 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	EMetaInfoType Request = EMetaInfoType_Geometry;
+	EDiskInfoType Request = EDiskInfoType_Geometry;
 	MetaInfoResponse Response = { 0 };
 
 	UNREFERENCED_PARAMETER(unused1);
@@ -616,7 +616,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		DiskInfo_Format *pRes = (DiskInfo_Format *)pBuffer;
 		memset(pBuffer, 0, sizeof(DiskInfo_Format));
 
-		Request = EMetaInfoType_Type;
+		Request = EDiskInfoType_Type;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -626,7 +626,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->DiskType = Response.vals[0].dwLow;
 
-		Request = EMetaInfoType_ParserInfo;
+		Request = EDiskInfoType_ParserInfo;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -636,7 +636,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->DiskFormat = Response.vals[0].dwLow;
 
-		Request = EMetaInfoType_Geometry;
+		Request = EDiskInfoType_Geometry;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -647,7 +647,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		pRes->dwBlockSize = Response.vals[2].dwLow;
 		pRes->qwDiskSize = Response.vals[1].qword;
 
-		Request = EMetaInfoType_LinkageId;
+		Request = EDiskInfoType_LinkageId;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -657,7 +657,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->LinkageId = Response.guid;
 
-		Request = EMetaInfoType_InUseFlag;
+		Request = EDiskInfoType_InUseFlag;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -667,7 +667,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->bIsInUse = (BOOLEAN)Response.vals[0].dwLow;
 
-		Request = EMetaInfoType_IsFullyAllocated;
+		Request = EDiskInfoType_IsFullyAllocated;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -677,7 +677,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->bIsFullyAllocated = (BOOLEAN)Response.vals[0].dwLow;
 
-		Request = EMetaInfoType_Unk9;
+		Request = EDiskInfoType_Unk9;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -687,7 +687,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->f_1C = (BOOLEAN)Response.vals[0].dwLow;
 
-		Request = EMetaInfoType_Page83Data;
+		Request = EDiskInfoType_Page83Data;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -704,7 +704,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		if (*pBufferSize < sizeof(INT))
 			return status = STATUS_BUFFER_TOO_SMALL;
 		INT *pRes = (INT *)pBuffer;
-		Request = EMetaInfoType_FragmentationPercentageR2;
+		Request = EDiskInfoType_FragmentationPercentageR2;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))
@@ -743,7 +743,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		ParentNameResponse *ResponseBuffer = (ParentNameResponse *)ExAllocatePoolWithTag(PagedPool, ResponseBufferSize, EvhdPoolTag);
 		if (!ResponseBuffer)
 			return STATUS_INSUFFICIENT_RESOURCES;
-		Request = EMetaInfoType_ParentNameList;
+		Request = EDiskInfoType_ParentNameList;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			ResponseBuffer, ResponseBufferSize);
 		if (!NT_SUCCESS(status))
@@ -786,7 +786,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		if (*pBufferSize < sizeof(DiskInfo_Geometry))
 			return status = STATUS_BUFFER_TOO_SMALL;
 		DiskInfo_Geometry *pRes = (DiskInfo_Geometry *)pBuffer;
-		Request = EMetaInfoType_Geometry;
+		Request = EDiskInfoType_Geometry;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(MetaInfoResponse));
 		if (!NT_SUCCESS(status))

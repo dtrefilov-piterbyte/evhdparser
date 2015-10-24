@@ -84,14 +84,16 @@
 #define IOCTL_STORAGE_VALIDATE_VHD					 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0680, METHOD_BUFFERED, FILE_ANY_ACCESS)	
 //0x2D1A04 
 #define IOCTL_STORAGE_VALIDATE_METADATA_ACCESS		 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0681, METHOD_BUFFERED, FILE_ANY_ACCESS)	
-//0x2D5928 - vhdmp adapter
+//0x2D5928 - miniport
 #define IOCTL_STORAGE_QUERY_VHD_FILENAME			 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x064A, METHOD_BUFFERED, FILE_READ_ACCESS)
 //0x2D592C - vdrvroot 
 #define IOCTL_STORAGE_VHD_FIND_SHIM					 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x064B, METHOD_BUFFERED, FILE_READ_ACCESS)
-//0x2D593C - vhdmp adapter
+//0x2D593C - miniport
 #define IOCTL_STORAGE_QUERY_INSTANCE_ID				 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x064F, METHOD_BUFFERED, FILE_READ_ACCESS)
 
-//0x2D5980 - vhdmp root object
+//0x2D5A0C - another preload disk metadata?
+
+//0x2D5980 - vhdmp
 #define IOCTL_STORAGE_REGISTER_BALANCER						CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0660, METHOD_BUFFERED, FILE_READ_ACCESS)	
 //0x2D5984
 #define IOCTL_STORAGE_REGISTER_QOS_INTERFACE				CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0661, METHOD_BUFFERED, FILE_READ_ACCESS)	
@@ -99,19 +101,19 @@
 #define IOCTL_STORAGE_UNREGISTER_QOS_INTERFACE				CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0662, METHOD_BUFFERED, FILE_READ_ACCESS)	
 //0x2D598C 
 #define IOCTL_STORAGE_PRELOAD_DISK_METADATA			 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0663, METHOD_BUFFERED, FILE_READ_ACCESS)	
-//0x2D118C - vhdmp adapter
+//0x2D118C - miniport
 #define IOCTL_STORAGE_QUERY_DEPENDENT_DISK					CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0463, METHOD_BUFFERED, FILE_ANY_ACCESS)	
-//0x2D518C - vhdmp adapter
+//0x2D518C - miniport
 #define IOCTL_STORAGE_QUERY_DEPENDENT_DISK2					CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0463, METHOD_BUFFERED, FILE_READ_ACCESS)	
-//0x2D1190 - vhdmp adapter
+//0x2D1190 - miniport
 #define IOCTL_STORAGE_QUERY_DEPENDENT_DISK_QOS		 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0464, METHOD_BUFFERED, FILE_ANY_ACCESS)	
-//0x2D5190 - vhdmp adapter
+//0x2D5190 - miniport
 #define IOCTL_STORAGE_QUERY_DEPENDENT_DISK_QOS2				CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0464, METHOD_BUFFERED, FILE_READ_ACCESS)	
-//0x2D9194 - vhdmp adapter
+//0x2D9194 - miniport
 #define IOCTL_STORAGE_DEPENDENCY_REMOVAL					CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0465, METHOD_BUFFERED, FILE_WRITE_ACCESS)	
-//0x2D9198 - vhdmp adapter
+//0x2D9198 - miniport
 #define IOCTL_STORAGE_DEPENDENCY_UPDATE						CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0466, METHOD_BUFFERED, FILE_WRITE_ACCESS)	
-//0x2D1400 - vhdmp adapter
+//0x2D1400 - miniport
 #define IOCTL_STORAGE_QUERY_PROPERTY				 		CTL_CODE(FILE_DEVICE_MASS_STORAGE, 0x0500, METHOD_BUFFERED, FILE_ANY_ACCESS)	
 
 //0x248004
@@ -142,8 +144,8 @@
 #define IOCTL_VIRTUAL_DISK_UNK_000D							CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x000D, METHOD_BUFFERED, FILE_WRITE_ACCESS)	  
 //0x248038
 #define IOCTL_VIRTUAL_DISK_RESET							CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x000E, METHOD_BUFFERED, FILE_WRITE_ACCESS)	  
-//0x248198
-#define IOCTL_VIRTUAL_DISK_UNK_0066							CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x0066, METHOD_BUFFERED, FILE_WRITE_ACCESS)		  
+//0x248198 - set LUN address
+#define IOCTL_VIRTUAL_DISK_SET_LUN							CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x0066, METHOD_BUFFERED, FILE_WRITE_ACCESS)		  
 //0x24819E
 #define IOCTL_VIRTUAL_DISK_SCSI_REQUEST 					CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0x0067, METHOD_OUT_DIRECT, FILE_WRITE_ACCESS) 
 //0x2401A0
@@ -182,22 +184,22 @@
 #pragma warning(disable : 4201) // nonstandard extension: nameless struct/union
 typedef enum
 {
-	EMetaInfoType_Geometry					= 0x0,
-	EMetaInfoType_LinkageId					= 0x1,
-	EMetaInfoType_ParentNameList			= 0x2,
-	EMetaInfoType_ParentLinkageId			= 0x3,
-	EMetaInfoType_ParentTimestamp			= 0x4,
-	EMetaInfoType_ParserInfo				= 0x6,
-	EMetaInfoType_Type						= 0x7,
-	EMetaInfoType_IsFullyAllocated			= 0x8,
-	EMetaInfoType_Unk9						= 0x9,
-	EMetaInfoType_NumSectors				= 0xA,
-	EMetaInfoType_FragmentationPercentage	= 0xA,	// 2012
-	EMetaInfoType_FragmentationPercentageR2	= 0xC,
-	EMetaInfoType_InUseFlag					= 0xD,
-	EMetaInfoType_Page83Data				= 0xE,
-	EMetaInfoType_InstanceId				= 0x3E8,
-} EMetaInfoType;
+	EDiskInfoType_Geometry					= 0x0,
+	EDiskInfoType_LinkageId					= 0x1,
+	EDiskInfoType_ParentNameList				= 0x2,
+	EDiskInfoType_ParentLinkageId			= 0x3,
+	EDiskInfoType_ParentTimestamp			= 0x4,
+	EDiskInfoType_ParserInfo					= 0x6,
+	EDiskInfoType_Type						= 0x7,
+	EDiskInfoType_IsFullyAllocated			= 0x8,
+	EDiskInfoType_Unk9						= 0x9,
+	EDiskInfoType_NumSectors					= 0xA,
+	EDiskInfoType_FragmentationPercentage	= 0xA,	// 2012
+	EDiskInfoType_FragmentationPercentageR2	= 0xC,
+	EDiskInfoType_InUseFlag					= 0xD,
+	EDiskInfoType_Page83Data					= 0xE,
+	EDiskInfoType_InstanceId					= 0x3E8,
+} EDiskInfoType;
 
 #pragma pack (push, 1)
 typedef union {
@@ -208,7 +210,7 @@ typedef union {
 	ULONG64 qword;
 } uVal;
 typedef struct {
-	EMetaInfoType dwRequestCode;
+	EDiskInfoType dwRequestCode;
 	INT dwUnk;
 	union {
 		GUID guid;
