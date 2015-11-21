@@ -10,14 +10,6 @@ typedef struct {
 	ULONG32 Reserved2;
 } FindShimRequest;
 
-typedef enum
-{
-	EDiskFormat_Unknown,
-	EDiskFormat_Iso,
-	EDiskFormat_Vhd,
-	EDiskFormat_Vhdx
-} EDiskFormat;
-
 typedef struct {
 	ULONG32 eParserType;
 	GUID ParserProviderId;
@@ -36,6 +28,15 @@ typedef struct
 	GUID			ResiliencyId;		// VmId
 	UCHAR			_align[3];
 } ResiliencyInfo;
+
+typedef enum
+{
+	EDiskFormat_Unknown,
+	EDiskFormat_Iso,
+	EDiskFormat_Vhd,
+	EDiskFormat_Vhdx,
+	EDiskFormat_Vhds	// VHD set
+} EDiskFormat;
 
 typedef struct {
 	ULONG32			dwVersion;

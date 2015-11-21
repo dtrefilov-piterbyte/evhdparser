@@ -17,6 +17,9 @@
     <Filter Include="cipher">
       <UniqueIdentifier>{3aa1853f-2011-4b69-9808-e31829ebd329}</UniqueIdentifier>
     </Filter>
+    <Filter Include="2016">
+      <UniqueIdentifier>{3983f49e-d2c5-49a9-9aa6-90d5a1ad4dd3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Inf Include="EVhdParser.inf">
@@ -109,6 +112,9 @@
     </ClInclude>
     <ClInclude Include="CipherOpts.h">
       <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="2016\Vstor.h">
+      <Filter>2016</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
