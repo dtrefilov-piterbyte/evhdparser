@@ -116,5 +116,8 @@
     <ClInclude Include="2016\Vstor.h">
       <Filter>2016</Filter>
     </ClInclude>
+    <ClInclude Include="2016\parser.h">
+      <Filter>2016</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -508,7 +508,11 @@ NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser)
 		LONG64 qwUnk2;
 	} Request;
 #pragma pack(pop)
-	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VALIDATE_VHD, &Request, sizeof(Request), NULL, 0);
+	Request.dwVersion = 0;
+	Request.dwUnk1 = 0;
+	Request.qwUnk1 = 0;
+	Request.qwUnk2 = 0;
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_VALIDATE, &Request, sizeof(Request), NULL, 0);
 	return status;
 }
 

@@ -135,7 +135,7 @@ typedef struct {
 	PDRIVER_OBJECT					pDriverObject;
 	ParserOpenDisk_t				pfnOpenDisk;
 	ParserCloseDisk_t				pfnCloseDisk;
-	ParserCallback_t				pfnUnknown;						// Unused
+	ParserCallback_t				pfnCancelIo;						// Unused
 	ParserMountDisk_t				pfnMountDisk;
 	ParserDismountDisk_t			pfnDismountDisk;
 	ParserQueryMountStatusDisk_t	pfnQueryMountStatusDisk;
