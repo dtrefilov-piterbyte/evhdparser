@@ -285,7 +285,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 		INT dwFlags;
 		UCHAR Unused[12];
 		USHORT wFlags;
-		USHORT _align;
+		USHORT wFlags2;
 		CompleteScsiRequest_t pfnCompleteScsiRequest;
 		SendMediaNotification_t pfnSendMediaNotification;
 		SendNotification_t pfnSendNotification;
