@@ -11,9 +11,8 @@ briefly overviewed at
 http://download.microsoft.com/download/5/b/9/5b97017b-e28a-4bae-ba48-174cf47d23cd/vir049_wh06.ppt
 
 It seems that Microsoft had planned to implement an expandability of virtual storage services
-(as it is done in Extensible Hyper-V switch) and to enable third-party SAN developers
-to write their own enlightened I/O parser for their solutions, but unfortunatelly StorVSP API
-has not become public.
+(as VMware does with VAIO SDK) and to enable third-party SAN developers to write their own
+enlightened I/O parser for their solutions. But unfortunatelly StorVSP API has not become public.
 
 Caution
 --------------
