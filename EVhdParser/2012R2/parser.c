@@ -382,15 +382,15 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	PFILE_OBJECT pFileObject = NULL;
 	HANDLE FileHandle = NULL;
 	ParserInstance *parser = NULL;
-	ResiliencyInfo vmInfo = { 0 };
+	ResiliencyInfoEa vmInfo = { 0 };
 
 	if (pVmId)
 	{
-		vmInfo.ResiliencyFlags = 0;
-		vmInfo.ResiliencyFlags2 = 0x10;
-		vmInfo.ResiliencyLength = 0x1C;
-		strncpy(vmInfo.ResiliencyName, "ClusteredApplicationInstance", sizeof(vmInfo.ResiliencyName));
-		vmInfo.ResiliencyId = *pVmId;
+		vmInfo.NextEntryOffset = 0;
+		vmInfo.EaValueLength = sizeof(GUID);
+		vmInfo.EaNameLength = sizeof(vmInfo.EaName) - 1;
+		strncpy(vmInfo.EaName, "ClusteredApplicationInstance", sizeof(vmInfo.EaName));
+		vmInfo.EaValue = *pVmId;
 	}
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pVmId ? &vmInfo : NULL);
 	if (!NT_SUCCESS(status))

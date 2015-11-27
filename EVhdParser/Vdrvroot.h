@@ -20,14 +20,14 @@ typedef struct {
 
 typedef struct
 {
-	ULONG32			dwVersion;
-	UCHAR			ResiliencyFlags;
-	UCHAR			ResiliencyLength;
-	USHORT			ResiliencyFlags2;
-	CHAR			ResiliencyName[29];	// "ClusteredApplicationInstance"
-	GUID			ResiliencyId;		// VmId
+	ULONG32			NextEntryOffset;
+	UCHAR			Flags;
+	UCHAR			EaNameLength;
+	USHORT			EaValueLength;
+	CHAR			EaName[29];			// "ClusteredApplicationInstance"
+	GUID			EaValue;		// VmId
 	UCHAR			_align[3];
-} ResiliencyInfo;
+} ResiliencyInfoEa;
 
 typedef enum
 {
@@ -39,11 +39,6 @@ typedef enum
 } EDiskFormat;
 
 typedef struct {
-	ULONG32			dwVersion;
-	UCHAR			typeFlags;
-	UCHAR			typeLength;
-	USHORT			typeFlags2;
-	CHAR			szType[8];	// "VIRTDSK"
 	GUID			DevInterfaceClassGuid;
 	EDiskFormat		DiskFormat;
 	GUID			ParserProviderId;
@@ -55,10 +50,19 @@ typedef struct {
 	ULONG32			GetInfoOnly;
 	ULONG32			ReadOnly;
 	ULONG64			Reserved;
-	ResiliencyInfo	VmInfo;
+} VirtDiskEa;
+
+typedef struct {
+	ULONG32				NextEntryOffset;
+	UCHAR				Flags;
+	UCHAR				EaNameLength;
+	USHORT				EaValueLength;
+	CHAR				szType[8];	// "VIRTDSK"
+	VirtDiskEa			VirtDisk;
+	ResiliencyInfoEa	VmInfo;
 } OpenDiskEa;
 
 NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath);
-NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath, const ResiliencyInfo *pResiliency);
+NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath, const ResiliencyInfoEa *pResiliency);
 
 #pragma pack(pop)

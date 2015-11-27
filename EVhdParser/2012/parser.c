@@ -315,7 +315,7 @@ NTSTATUS EVhdInit(SrbCallbackInfo *callbackInfo, PCUNICODE_STRING diskPath, ULON
 	PFILE_OBJECT pFileObject = NULL;
 	HANDLE FileHandle = NULL;
 	ParserInstance *parser = NULL;
-	ResiliencyInfo *pResiliency = (ResiliencyInfo *)*pInOutParam;
+	ResiliencyInfoEa *pResiliency = (ResiliencyInfoEa *)*pInOutParam;
 	ULONG32 dwFlags = OpenFlags ? ((OpenFlags & 0x80000000) ? 0xD0000 : 0x3B0000) : 0x80000;
 
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pResiliency);

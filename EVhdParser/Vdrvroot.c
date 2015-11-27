@@ -3,6 +3,7 @@
 #include "Guids.h"
 #include "Ioctl.h"
 #include "utils.h"
+#include <stddef.h>
 
 NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 {
@@ -109,7 +110,7 @@ cleanup:
 	return status;
 }
 
-NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath, const ResiliencyInfo *pResiliency)
+NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath, const ResiliencyInfoEa *pResiliency)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	HANDLE FileHandle = NULL;
@@ -126,38 +127,34 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 		goto cleanup_failure;
 	}
 
-	// hardcoded
-	ea.dwVersion = 0;
-	ea.typeFlags = 0x80;
-	ea.typeLength = 7;
-	ea.typeFlags2 = 0x48;
+	ea.NextEntryOffset = 0;
+	ea.Flags = FILE_NEED_EA;
+	ea.EaNameLength = sizeof(ea.szType) - 1;
+	ea.EaValueLength = sizeof(VirtDiskEa);
 	strncpy(ea.szType, "VIRTDSK", sizeof(ea.szType));
-	ea.DevInterfaceClassGuid = GUID_DEVINTERFACE_SURFACE_VIRTUAL_DRIVE;
-	ea.DiskFormat = EDiskFormat_Vhd;
-	ea.ParserProviderId = VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT;
-	ea.StorageType = 'H';
+	ea.VirtDisk.DevInterfaceClassGuid = GUID_DEVINTERFACE_SURFACE_VIRTUAL_DRIVE;
+	ea.VirtDisk.DiskFormat = EDiskFormat_Vhd;
+	ea.VirtDisk.ParserProviderId = VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT;
+	ea.VirtDisk.StorageType = 'H';
 #if NTDDI_VERSION == NTDDI_WINBLUE
-	ea.OpenFlags = OpenFlags & 1 ? 0x80000000 : (OpenFlags & 2 ? 1 : 0);
+	ea.VirtDisk.OpenFlags = OpenFlags & 1 ? 0x80000000 : (OpenFlags & 2 ? 1 : 0);
 #elif NTDDI_VERSION == NTDDI_WIN8
-	ea.OpenFlags = OpenFlags ? 0 : 1;
+	ea.VirtDisk.OpenFlags = OpenFlags ? 0 : 1;
 #endif
-	ea.VirtualDiskAccessMask = 0;
-	ea.RWDepth = 0;
-	ea.OpenRequestVersion = 2;
+	ea.VirtDisk.VirtualDiskAccessMask = 0;
+	ea.VirtDisk.RWDepth = 0;
+	ea.VirtDisk.OpenRequestVersion = 2;
 #if NTDDI_VERSION == NTDDI_WINBLUE
-	ea.GetInfoOnly = OpenFlags & 1;
-	ea.ReadOnly = 0;
+	ea.VirtDisk.GetInfoOnly = OpenFlags & 1;
+	ea.VirtDisk.ReadOnly = 0;
 #endif
 
 	if (pResiliency)
 	{
-		// Dunno, hardcoded	   
-		ea.dwVersion = 'X';
-		memmove(&ea.VmInfo, pResiliency, sizeof(ResiliencyInfo));
+		ea.NextEntryOffset = offsetof(OpenDiskEa, VmInfo);
+		memmove(&ea.VmInfo, pResiliency, sizeof(ResiliencyInfoEa));
 	}
 
-	// 2012 R2 only?
-	// A bit of old good MS code
 	if (VhdmpPath.Length > 6 &&
 		'i' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 3] | 0x20) &&	// lowercase
 		's' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 2] | 0x20) &&
@@ -166,8 +163,8 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 		VhdmpPath.Length -= 6;
 		RtlAppendUnicodeToString(&VhdmpPath, L"EMPTY");
 
-		ea.DiskFormat = EDiskFormat_Iso;
-		ea.ReadOnly = TRUE;
+		ea.VirtDisk.DiskFormat = EDiskFormat_Iso;
+		ea.VirtDisk.ReadOnly = TRUE;
 	}
 
 	if (VhdmpPath.Length > 8 &&
@@ -176,7 +173,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 		'd' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 2] | 0x20) &&
 		'x' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 1] | 0x20))
 	{
-		ea.DiskFormat = EDiskFormat_Vhdx;
+		ea.VirtDisk.DiskFormat = EDiskFormat_Vhdx;
 	}
 
 	ObjectAttributes.Length = sizeof(OBJECT_ATTRIBUTES);
