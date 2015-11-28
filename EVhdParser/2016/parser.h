@@ -14,6 +14,7 @@ typedef struct _ParserInstance {
 	BOOLEAN			bIoRegistered;
 	BOOLEAN			bFastPause;
 	BOOLEAN			bFastClose;
+	PVOID			pVstorInterface;
 	IoInfo			IoInfo;
 	ULONG32			dwDiskSaveSize;
 	ULONG32			dwInnerBufferSize;
@@ -28,6 +29,8 @@ typedef struct _ParserInstance {
 	EX_RUNDOWN_REF	RecoveryRundownProtection;
 	PIRP			pRecoveryStatusIrp;
 	RecoveryStatusCompletionRoutine	pfnRecoveryStatusCallback;
+
+	USHORT			wUnkIoFlags;
 
 	RecoveryStatusInfo	RecoveryStatusInfo;
 
@@ -47,3 +50,16 @@ NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG
 NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour);
 NTSTATUS EVhdSetQosConfigurationDisk(ParserInstance *parser, PVOID pConfig);
 NTSTATUS EVhdGetQosInformationDisk(ParserInstance *parser, PVOID pInfo);
+NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *pParams);
+NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTEnableParam *pParams);
+NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *dwBytesTransferred, ULONG32 bForce);
+NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParams);
+NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface);
+NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus);
+NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);
+NTSTATUS EVhdStartMetaOperation(MetaOperation *operation);
+NTSTATUS EVhdCancelMetaOperation(MetaOperation *operation);
+NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *operation);
+NTSTATUS EVhdCleanupMetaOperation(MetaOperation *operation);
+NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer /* TODO:sizeof=0x18 */);
+NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pInputBuffer, ULONG32 dwInputBufferLength);

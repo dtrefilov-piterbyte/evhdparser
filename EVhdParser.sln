@@ -9,12 +9,17 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EVhdConfig", "EVhdConfig\EV
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Win10 Debug|x64 = Win10 Debug|x64
+		Win10 Release|x64 = Win10 Release|x64
 		Win8 Debug|x64 = Win8 Debug|x64
 		Win8 Release|x64 = Win8 Release|x64
 		Win8.1 Debug|x64 = Win8.1 Debug|x64
 		Win8.1 Release|x64 = Win8.1 Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Debug|x64.ActiveCfg = Win10 Debug|x64
+		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Release|x64.ActiveCfg = Win10 Release|x64
+		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Release|x64.Build.0 = Win10 Release|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8 Debug|x64.ActiveCfg = Win8 Debug|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8 Debug|x64.Build.0 = Win8 Debug|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8 Release|x64.ActiveCfg = Win8 Release|x64
@@ -23,12 +28,16 @@ Global
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8.1 Debug|x64.Build.0 = Win8.1 Debug|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8.1 Release|x64.ActiveCfg = Win8.1 Release|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8.1 Release|x64.Build.0 = Win8.1 Release|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win10 Debug|x64.ActiveCfg = Debug|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win10 Debug|x64.Build.0 = Debug|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win10 Release|x64.ActiveCfg = Release|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win10 Release|x64.Build.0 = Release|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8 Debug|x64.ActiveCfg = Debug|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8 Debug|x64.Build.0 = Debug|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8 Release|x64.ActiveCfg = Release|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8 Release|x64.Build.0 = Release|x64
-		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Debug|x64.ActiveCfg = Debug|x64
-		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Debug|x64.Build.0 = Debug|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Debug|x64.ActiveCfg = Release|x64
+		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Debug|x64.Build.0 = Release|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Release|x64.ActiveCfg = Release|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Release|x64.Build.0 = Release|x64
 	EndGlobalSection

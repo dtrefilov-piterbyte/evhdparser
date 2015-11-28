@@ -222,15 +222,21 @@ typedef enum
 	EDiskInfoType_ParentNameList				= 0x2,
 	EDiskInfoType_ParentLinkageId			= 0x3,
 	EDiskInfoType_ParentTimestamp			= 0x4,
-	EDiskInfoType_ParserInfo					= 0x6,
+	EDiskInfoType_ParserInfo				= 0x6,
 	EDiskInfoType_Type						= 0x7,
 	EDiskInfoType_IsFullyAllocated			= 0x8,
 	EDiskInfoType_Unk9						= 0x9,
-	EDiskInfoType_NumSectors					= 0xA,
-	EDiskInfoType_FragmentationPercentage	= 0xA,	// 2012
-	EDiskInfoType_FragmentationPercentageR2	= 0xC,
+#if NTDDI_VERSION >= NTDDI_WINBLUE	
+	EDiskInfoType_NumSectors				= 0xA,
+	EDiskInfoType_FragmentationPercentage	= 0xC,
 	EDiskInfoType_InUseFlag					= 0xD,
-	EDiskInfoType_Page83Data					= 0xE,
+	EDiskInfoType_Page83Data				= 0xE,
+#if WINVEREX >= 0x10000000
+	EDiskInfoType_RctId						= 0xF,
+#endif
+#else	 
+	EDiskInfoType_FragmentationPercentage = 0xA,	// 2012
+#endif
 	EDiskInfoType_InstanceId					= 0x3E8,
 } EDiskInfoType;
 
@@ -249,7 +255,7 @@ typedef struct {
 		GUID guid;
 		uVal vals[3];
 	};
-} MetaInfoResponse;
+} DiskInfoResponse;
 #pragma pack(pop)	 	
 
 #pragma warning(pop)

@@ -33,9 +33,6 @@
     <ClCompile Include="2012R2\parser.c">
       <Filter>2012 R2</Filter>
     </ClCompile>
-    <ClCompile Include="2012R2\VhdFlt.c">
-      <Filter>2012 R2</Filter>
-    </ClCompile>
     <ClCompile Include="2012\driver.c">
       <Filter>2012</Filter>
     </ClCompile>
@@ -59,6 +56,9 @@
     </ClCompile>
     <ClCompile Include="Gost89Cipher.c">
       <Filter>cipher</Filter>
+    </ClCompile>
+    <ClCompile Include="2016\parser.c">
+      <Filter>2016</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

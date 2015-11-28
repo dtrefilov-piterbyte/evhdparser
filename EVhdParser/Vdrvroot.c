@@ -110,7 +110,39 @@ cleanup:
 	return status;
 }
 
-NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath, const ResiliencyInfoEa *pResiliency)
+NTSTATUS GetIsDifferencing(HANDLE FileHandle, __out BOOLEAN *pResult)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PFILE_OBJECT pFileObject = NULL;
+	EDiskInfoType Request = EDiskInfoType_Type;
+	DiskInfoResponse Response = { 0 };
+	Request = EDiskInfoType_Type;
+
+	status = ObReferenceObjectByHandle(FileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
+	if (!NT_SUCCESS(status))
+	{
+		DEBUG("ObReferenceObjectByHandle() failed. 0x%0X\n", status);
+		goto cleanup;
+	}
+
+	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+		&Response, sizeof(DiskInfoResponse));
+	if (!NT_SUCCESS(status))
+	{
+		DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
+		goto cleanup;
+	}
+	*pResult = Response.vals[0].dwLow == 4;
+cleanup:
+	if (pFileObject) ObDereferenceObject(pFileObject);
+
+	return status;
+}
+
+
+// TODO: OpenFlags is an OPEN_VIRTUAL_DISK_FLAG?
+NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath,
+	const ResiliencyInfoEa *pResiliency)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	HANDLE FileHandle = NULL;
@@ -119,6 +151,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	UNICODE_STRING VhdmpPath = { 0 };
 	PFILE_OBJECT pFileObject = NULL;
 	OpenDiskEa ea = { 0 };
+	BOOLEAN getInfoOnly = OpenFlags & 1;
 
 	status = FindShimDevice(&VhdmpPath, diskPath);
 	if (!NT_SUCCESS(status))
@@ -130,23 +163,50 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	ea.NextEntryOffset = 0;
 	ea.Flags = FILE_NEED_EA;
 	ea.EaNameLength = sizeof(ea.szType) - 1;
-	ea.EaValueLength = sizeof(VirtDiskEa);
-	strncpy(ea.szType, "VIRTDSK", sizeof(ea.szType));
+	ea.EaValueLength = sizeof(VirtDiskInfo);
+	strncpy(ea.szType, OPEN_FILE_VIRT_DISK_INFO_EA_NAME, sizeof(ea.szType));
 	ea.VirtDisk.DevInterfaceClassGuid = GUID_DEVINTERFACE_SURFACE_VIRTUAL_DRIVE;
 	ea.VirtDisk.DiskFormat = EDiskFormat_Vhd;
 	ea.VirtDisk.ParserProviderId = VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT;
-	ea.VirtDisk.StorageType = 'H';
-#if NTDDI_VERSION == NTDDI_WINBLUE
-	ea.VirtDisk.OpenFlags = OpenFlags & 1 ? 0x80000000 : (OpenFlags & 2 ? 1 : 0);
+	ea.VirtDisk.dwSize = sizeof(VirtDiskInfo);
+#if NTDDI_VERSION >= NTDDI_WINBLUE
+	ea.VirtDisk.OpenFlags = 0;
+	if (!getInfoOnly)
+	{
+		ea.VirtDisk.OpenFlags |= 0x80000000;
+#if WINVEREX >= 0x10000000
+		if (OpenFlags & 0x20)
+			ea.VirtDisk.OpenFlags |= 0x8;
+		else if (OpenFlags & 0x10)
+			ea.VirtDisk.OpenFlags |= 0x20;
+#endif
+	}
+	else if (0 == (OpenFlags & 2))
+	{
+		ea.VirtDisk.OpenFlags = 1;
+	}
+
 #elif NTDDI_VERSION == NTDDI_WIN8
 	ea.VirtDisk.OpenFlags = OpenFlags ? 0 : 1;
+	(void)getInfoOnly;
 #endif
 	ea.VirtDisk.VirtualDiskAccessMask = 0;
-	ea.VirtDisk.RWDepth = 0;
 	ea.VirtDisk.OpenRequestVersion = 2;
-#if NTDDI_VERSION == NTDDI_WINBLUE
-	ea.VirtDisk.GetInfoOnly = OpenFlags & 1;
-	ea.VirtDisk.ReadOnly = 0;
+	ea.VirtDisk.ReadOnly = FALSE;
+#if NTDDI_VERSION >= NTDDI_WINBLUE
+	if (getInfoOnly)
+	{
+		ea.VirtDisk.GetInfoOnly = getInfoOnly;
+		ea.VirtDisk.RWDepth = FALSE;
+	}
+	else
+	{
+		ea.VirtDisk.GetInfoOnly = FALSE;
+#if WINVEREX >= 0x10000000
+		ea.VirtDisk.RWDepth = OpenFlags & 0x8 ? FALSE : TRUE;
+#endif
+	}
+
 #endif
 
 	if (pResiliency)
@@ -176,16 +236,74 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 		ea.VirtDisk.DiskFormat = EDiskFormat_Vhdx;
 	}
 
+#if WINVEREX >= 0x10000000
+	if (VhdmpPath.Length > 8 &&
+		'v' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 4] | 0x20) &&
+		'h' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 3] | 0x20) &&
+		'd' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 2] | 0x20) &&
+		's' == (VhdmpPath.Buffer[VhdmpPath.Length / sizeof(WCHAR) - 1] | 0x20))
+	{
+		ea.VirtDisk.DiskFormat = EDiskFormat_Vhds;
+	}
+#endif
+
 	ObjectAttributes.Length = sizeof(OBJECT_ATTRIBUTES);
 	ObjectAttributes.ObjectName = &VhdmpPath;
 	ObjectAttributes.Attributes = OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE;
 
-	status = ZwCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0, FILE_READ_ATTRIBUTES, 0, 0, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea));
+#if WINVEREX >= 0x10000000
+
+	status = IoCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0,
+		FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_OPEN, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea),
+		CreateFileTypeNone, NULL, IO_FORCE_ACCESS_CHECK | IO_NO_PARAMETER_CHECKING);
+	if (!NT_SUCCESS(status))
+	{
+		DEBUG("IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
+		goto cleanup_failure;
+	}
+
+	if (OpenFlags & 0x40)
+	{
+		for (;;)
+		{
+			BOOLEAN IsDifferencing = FALSE;
+			status = GetIsDifferencing(FileHandle, &IsDifferencing);
+			if (!NT_SUCCESS(status))
+			{
+				DEBUG("GetIsDifferencing failed with error 0x%0x\n", status);
+				goto cleanup_failure;
+			}
+			if (!IsDifferencing)
+				break;
+			status = ZwClose(FileHandle);
+			if (!NT_SUCCESS(status))
+			{
+				DEBUG("ZwClose failed with error 0x%0x\n", status);
+				goto cleanup_failure;
+			}
+
+			status = IoCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0,
+				FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_OPEN, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea),
+				CreateFileTypeNone, NULL, IO_FORCE_ACCESS_CHECK | IO_NO_PARAMETER_CHECKING);
+			if (!NT_SUCCESS(status))
+			{
+				DEBUG("IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
+				goto cleanup_failure;
+			}
+		}
+	}
+
+
+#else
+	status = ZwCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0,
+		FILE_READ_ATTRIBUTES, 0, 0, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea));
 	if (!NT_SUCCESS(status))
 	{
 		DEBUG("ZwCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
 		goto cleanup_failure;
 	}
+#endif
+
 
 	status = ObReferenceObjectByHandle(FileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
 	if (!NT_SUCCESS(status))

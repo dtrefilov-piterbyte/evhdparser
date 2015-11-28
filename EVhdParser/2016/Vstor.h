@@ -51,6 +51,11 @@ typedef struct {
 	PIRP pIrp;
 } MetaOperation;
 
+/* Forward declaration */
+struct _ScsiPacket;
+struct _ScsiPacketRequest;
+struct _ScsiPacketInnerRequest;
+
 typedef NTSTATUS(*StartIo_t)(PVOID, struct _ScsiPacket *, struct _ScsiPacketInnerRequest *, PMDL, BOOLEAN, PVOID);
 typedef NTSTATUS(*SaveData_t)(PVOID, PVOID, ULONG32);
 typedef NTSTATUS(*RestoreData_t)(PVOID, PVOID, ULONG32);

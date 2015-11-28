@@ -2,7 +2,8 @@
 #include "Ioctl.h"
 #include "utils.h"
 #include <initguid.h>
-#include <ntddscsi.h>
+#include <ntddscsi.h>  
+#include <fltKernel.h>
 #include "Vdrvroot.h"
 #include "Guids.h"
 #include "Gost89Cipher.h"
@@ -14,11 +15,11 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 {
 	UNREFERENCED_PARAMETER(diskPath);
 	NTSTATUS status = STATUS_SUCCESS;
-	MetaInfoResponse Response = { 0 };
+	DiskInfoResponse Response = { 0 };
 	EDiskInfoType Request = EDiskInfoType_ParserInfo;
 	EDiskFormat DiskFormat = EDiskFormat_Unknown;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-		&Response, sizeof(MetaInfoResponse));
+		&Response, sizeof(DiskInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
 		DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
@@ -34,7 +35,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 
 	Request = EDiskInfoType_Page83Data;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-		&Response, sizeof(MetaInfoResponse));
+		&Response, sizeof(DiskInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
 		DEBUG("Failed to retrieve virtual disk identifier. 0x%0X\n", status);
@@ -137,7 +138,7 @@ static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pT
 static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	MetaInfoResponse resp = { 0 };
+	DiskInfoResponse resp = { 0 };
 	EDiskInfoType req = EDiskInfoType_NumSectors;
 
 	parser->pVhdmpFileObject = pFileObject;
@@ -150,7 +151,7 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	}
 
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &req, sizeof(req),
-		&resp, sizeof(MetaInfoResponse));
+		&resp, sizeof(DiskInfoResponse));
 
 	if (!NT_SUCCESS(status))
 	{
@@ -345,7 +346,35 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 	return status;
 }
 
-NTSTATUS EvhdRemoveVhd(ParserInstance *parser, PVOID systemBuffer);
+static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, PVOID pInputBuffer, ULONG InputBufferSize)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	PDEVICE_OBJECT pDeviceObject = NULL;
+	KeEnterCriticalRegion();
+	FltAcquirePushLockExclusive(&parser->IoLock);
+
+	IoReuseIrp(parser->pIrp, STATUS_PENDING);
+	parser->pIrp->Flags |= IRP_NOCACHE;
+	parser->pIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);		// Pointer to calling thread control block
+	parser->pIrp->AssociatedIrp.SystemBuffer = pInputBuffer;				// IO buffer for buffered control code
+	// fill stack frame parameters for synchronous IRP call
+	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pIrp);
+	pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
+	pStackFrame->FileObject = parser->pVhdmpFileObject;
+	pStackFrame->DeviceObject = pDeviceObject;
+	pStackFrame->Parameters.DeviceIoControl.IoControlCode = ControlCode;
+	pStackFrame->Parameters.DeviceIoControl.InputBufferLength = InputBufferSize;
+	pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = 0;
+	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+	pStackFrame->MinorFunction = 0;
+	pStackFrame->Flags = 0;
+	pStackFrame->Control = 0;
+	IoSynchronousCallDriver(pDeviceObject, parser->pIrp);
+	status = parser->pIrp->IoStatus.Status;
+	FltReleasePushLock(&parser->IoLock);
+	KeLeaveCriticalRegion();
+	return status;
+}
 
 static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 {
@@ -361,7 +390,7 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 		} RemoveVhdRequest = { 1 };
 #pragma pack(pop)
 
-		EvhdRemoveVhd(parser, &RemoveVhdRequest);
+		EvhdDirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest));
 
 		parser->bIoRegistered = FALSE;
 		parser->Io.pIoInterface = NULL;
@@ -389,7 +418,7 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 		vmInfo.NextEntryOffset = 0;
 		vmInfo.EaValueLength = sizeof(GUID);
 		vmInfo.EaNameLength = sizeof(vmInfo.EaName) - 1;
-		strncpy(vmInfo.EaName, "ClusteredApplicationInstance", sizeof(vmInfo.EaName));
+		strncpy(vmInfo.EaName, OPEN_FILE_RESILIENCY_INFO_EA_NAME, sizeof(vmInfo.EaName));
 		vmInfo.EaValue = *pVmId;
 	}
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pVmId ? &vmInfo : NULL);
@@ -607,7 +636,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	EDiskInfoType Request = EDiskInfoType_Geometry;
-	MetaInfoResponse Response = { 0 };
+	DiskInfoResponse Response = { 0 };
 
 	UNREFERENCED_PARAMETER(unused1);
 	UNREFERENCED_PARAMETER(unused2);
@@ -622,7 +651,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_Type;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
@@ -632,7 +661,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_ParserInfo;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
@@ -642,7 +671,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_Geometry;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
@@ -653,7 +682,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_LinkageId;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve linkage identifier. 0x%0X\n", status);
@@ -663,7 +692,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_InUseFlag;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve in use flag. 0x%0X\n", status);
@@ -673,7 +702,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_IsFullyAllocated;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve fully allocated flag. 0x%0X\n", status);
@@ -683,7 +712,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_Unk9;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve unk9 flag. 0x%0X\n", status);
@@ -693,7 +722,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 		Request = EDiskInfoType_Page83Data;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
@@ -708,9 +737,9 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		if (*pBufferSize < sizeof(INT))
 			return status = STATUS_BUFFER_TOO_SMALL;
 		INT *pRes = (INT *)pBuffer;
-		Request = EDiskInfoType_FragmentationPercentageR2;
+		Request = EDiskInfoType_FragmentationPercentage;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
@@ -792,7 +821,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		DiskInfo_Geometry *pRes = (DiskInfo_Geometry *)pBuffer;
 		Request = EDiskInfoType_Geometry;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-			&Response, sizeof(MetaInfoResponse));
+			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
 			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
