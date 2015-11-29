@@ -494,12 +494,11 @@ VOID EVhdCloseDisk(ParserInstance *parser)
 }
 
 /** Initiate virtual disk IO */
-NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags1, MountInfo *mountInfo)
+NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, MountInfo *mountInfo)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// WTF?
-	status = EvhdRegisterIo(parser, flags1 & 1 ? TRUE : FALSE, ((INT_PTR)mountInfo >> 1 & 1) ? TRUE : FALSE);
+	status = EvhdRegisterIo(parser, flags & 1, (flags >> 1) & 1);
 	if (!NT_SUCCESS(status))
 	{
 		DEBUG("VHD: EvhdRegisterIo failed with error 0x%0x\n", status);

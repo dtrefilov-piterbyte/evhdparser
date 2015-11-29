@@ -85,6 +85,31 @@ static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, P
 	return status;
 }
 
+static NTSTATUS EvhdQosStatusControl(ParserInstance *parser, ULONG ControlCode, ULONG InputBufferSize, ULONG OutputBufferSize,
+	PIO_COMPLETION_ROUTINE pfnCompletionRoutine)
+{
+	PDEVICE_OBJECT pDeviceObject = NULL;
+
+	IoReuseIrp(parser->pQoSStatusIrp, STATUS_PENDING);
+	parser->pQoSStatusIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
+	parser->pQoSStatusIrp->AssociatedIrp.SystemBuffer = parser->pQoSStatusBuffer;				// IO buffer for buffered control code
+	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pQoSStatusIrp);
+	pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
+	pStackFrame->FileObject = parser->pVhdmpFileObject;
+	pStackFrame->DeviceObject = pDeviceObject;
+	pStackFrame->Parameters.DeviceIoControl.IoControlCode = ControlCode;
+	pStackFrame->Parameters.DeviceIoControl.InputBufferLength = InputBufferSize;
+	pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = OutputBufferSize;
+	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+	pStackFrame->MinorFunction = 0;
+	pStackFrame->Flags = 0;
+	pStackFrame->Control = SL_INVOKE_ON_CANCEL | SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
+	pStackFrame->Context = parser;
+	pStackFrame->CompletionRoutine = pfnCompletionRoutine;
+	IoCallDriver(pDeviceObject, parser->pQoSStatusIrp);
+	return STATUS_PENDING;
+}
+
 static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
@@ -171,11 +196,99 @@ static VOID EvhdFinalize(ParserInstance *parser)
 	}
 }
 
+static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
+{
+	pPacket->pRequest->SrbStatus = pPacket->pInner->Srb.SrbStatus;
+	pPacket->pRequest->ScsiStatus = pPacket->pInner->Srb.ScsiStatus;
+	pPacket->pRequest->SenseInfoBufferLength = pPacket->pInner->Srb.SenseInfoBufferLength;
+	pPacket->pRequest->DataTransferLength = pPacket->pInner->Srb.DataTransferLength;
+	if (!NT_SUCCESS(status))
+	{
+		if (SRB_STATUS_SUCCESS != pPacket->pInner->Srb.SrbStatus)
+			pPacket->pRequest->SrbStatus = SRB_STATUS_ERROR;
+	}
+	else
+	{
+		switch (pPacket->pInner->Srb.Cdb[0])
+		{
+		case SCSI_OP_CODE_INQUIRY:
+			pPacket->pRequest->bFlags |= 1;
+			break;
+		}
+	}
+}
+
+NTSTATUS EvhdCompleteScsiRequest(ScsiPacket *pPacket, NTSTATUS status)
+{
+	EvhdPostProcessScsiPacket(pPacket, status);
+	return VstorCompleteScsiRequest(pPacket);
+}
+
+NTSTATUS EvhdSendNotification(void *param1, INT param2)
+{
+	return VstorSendNotification(param1, param2);
+}
+
+NTSTATUS EvhdSendMediaNotification(void *param1)
+{
+	return VstorSendMediaNotification(param1);
+}
+
+static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN flag2, PGUID pUnkGuid)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+
+	if (!parser->bIoRegistered)
+	{
+		RegisterIoRequest request = { 0 };
+		RegisterIoResponse response = { 0 };
+		SCSI_ADDRESS scsiAddressResponse = { 0 };
+
+		request.dwVersion = 1;
+		request.dwFlags = flag1 ? 9 : 8;
+		if (flag2) request.wFlags |= 0x1;
+		request.unkGuid = *pUnkGuid;
+		request.pfnCompleteScsiRequest = &EvhdCompleteScsiRequest;
+		request.pfnSendMediaNotification = &EvhdSendMediaNotification;
+		request.pfnSendNotification = &EvhdSendNotification;
+		request.pVstorInterface = parser->pVstorInterface;
+		request.wMountFlags = parser->wMountFlags;
+
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REGISTER_IO, &request, sizeof(RegisterIoRequest),
+			&response, sizeof(RegisterIoResponse));
+
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("IOCTL_STORAGE_REGISTER_IO failed with error 0x%0X\n", status);
+			return status;
+		}
+
+		parser->bIoRegistered = TRUE;
+		parser->dwDiskSaveSize = response.dwDiskSaveSize;
+		parser->dwInnerBufferSize = sizeof(ScsiPacketInnerRequest) + response.dwExtensionBufferSize;
+		parser->Io = response.Io;
+
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_SCSI_GET_ADDRESS, NULL, 0, &scsiAddressResponse, sizeof(SCSI_ADDRESS));
+
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
+			return status;
+		}
+
+		parser->ScsiLun = scsiAddressResponse.Lun;
+		parser->ScsiPathId = scsiAddressResponse.PathId;
+		parser->ScsiTargetId = scsiAddressResponse.TargetId;
+	}
+
+	return status;
+}
+
 static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (parser->bMounted)
+	if (parser->bIoRegistered)
 	{
 #pragma pack(push, 1)
 		struct {
@@ -187,11 +300,11 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 
 		EvhdDirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest));
 
-		parser->bMounted = FALSE;
-		parser->IoInfo.pIoInterface = NULL;
-		parser->IoInfo.pfnStartIo = NULL;
-		parser->IoInfo.pfnSaveData = NULL;
-		parser->IoInfo.pfnRestoreData = NULL;
+		parser->bIoRegistered = FALSE;
+		parser->Io.pIoInterface = NULL;
+		parser->Io.pfnStartIo = NULL;
+		parser->Io.pfnSaveData = NULL;
+		parser->Io.pfnRestoreData = NULL;
 		parser->dwDiskSaveSize = 0;
 		parser->dwInnerBufferSize = 0;
 	}
@@ -237,7 +350,7 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	if (!NT_SUCCESS(status))
 		goto failure_cleanup;
 
-	parser->wUnkIoFlags = OpenFlags & 0x40 ? 4 : OpenFlags & 1;
+	parser->wMountFlags = OpenFlags & 0x40 ? 4 : OpenFlags & 1;	// 4 - ignore SCSI_SYNCHRONIZE_CACHE opcodes, 1 - read only mount
 	EvhdQueryBoolParameter(L"FastPause", TRUE, &parser->bFastPause);
 	EvhdQueryBoolParameter(L"FastClose", TRUE, &parser->bFastClose);
 	parser->pVstorInterface = vstorInterface;
@@ -263,127 +376,511 @@ cleanup:
 
 VOID EVhdCloseDisk(ParserInstance *parser)
 {
-	if (parser->bIoRegistered)
+	if (parser->bMounted)
 	{
 		EvhdUnregisterIo(parser);
-		parser->bIoRegistered = FALSE;
+		parser->bMounted = FALSE;
 	}
 	EvhdFinalize(parser);
 	ExFreePoolWithTag(parser, EvhdPoolTag);
 }
 NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, PGUID pUnkGuid, __out MountInfo *mountInfo)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(flags);
-	UNREFERENCED_PARAMETER(pUnkGuid);
-	UNREFERENCED_PARAMETER(mountInfo);
-	return STATUS_NOT_SUPPORTED;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	status = EvhdRegisterIo(parser, flags & 1, (flags >> 1) & 1, pUnkGuid);
+	if (!NT_SUCCESS(status))
+	{
+		DEBUG("VHD: EvhdRegisterIo failed with error 0x%0x\n", status);
+		EvhdUnregisterIo(parser);
+		return status;
+	}
+	parser->bMounted = TRUE;
+	mountInfo->dwInnerBufferSize = parser->dwInnerBufferSize;
+	mountInfo->bUnk = FALSE;
+	mountInfo->bFastPause = parser->bFastPause;
+	mountInfo->bFastClose = parser->bFastClose;
+
+	return status;
 }
 
 NTSTATUS EVhdDismountDisk(ParserInstance *parser)
 {
-	UNREFERENCED_PARAMETER(parser);
-	return STATUS_NOT_SUPPORTED;
+	NTSTATUS status = STATUS_SUCCESS;
+
+	status = EvhdUnregisterIo(parser);
+	parser->bMounted = FALSE;
+	return status;
 }
 
-NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser, /* TODO */ ULONG32 unk)
+NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser, /* TODO */ ULONG32 unkParam)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(unk);
-	return STATUS_NOT_SUPPORTED;
+	NTSTATUS status = STATUS_SUCCESS;
+	if (!parser->bIoRegistered)
+		return status;
+#pragma pack(push, 1)
+	struct {
+		ULONG32 unkParam;
+	} Request;
+#pragma pack(pop)
+	Request.unkParam = unkParam;
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_VALIDATE, &Request, sizeof(Request), NULL, 0);
+	return status;
 }
 
 NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pPacket);
-	return STATUS_NOT_SUPPORTED;
+	NTSTATUS status = STATUS_SUCCESS;
+	ScsiPacketInnerRequest *pInner = pPacket->pInner;
+	ScsiPacketRequest *pRequest = pPacket->pRequest;
+	PMDL pMdl = pPacket->pMdl;
+	SCSI_OP_CODE opCode = (UCHAR)pRequest->Sense.Cdb6.OpCode;
+	memset(&pInner->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
+	pInner->pParser = parser;
+	pInner->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
+	pInner->Srb.SrbStatus = pRequest->SrbStatus;
+	pInner->Srb.ScsiStatus = pRequest->ScsiStatus;
+	pInner->Srb.PathId = parser->ScsiPathId;
+	pInner->Srb.TargetId = parser->ScsiTargetId;
+	pInner->Srb.Lun = parser->ScsiLun;
+	pInner->Srb.CdbLength = pRequest->CdbLength;
+	pInner->Srb.SenseInfoBufferLength = pRequest->SenseInfoBufferLength;
+	pInner->Srb.SrbFlags = pRequest->bDataIn ? SRB_FLAGS_DATA_IN : SRB_FLAGS_DATA_OUT;
+	pInner->Srb.DataTransferLength = pRequest->DataTransferLength;
+	pInner->Srb.SrbFlags |= pRequest->SrbFlags & 8000;			  // Non-standard
+	pInner->Srb.SrbExtension = pInner + 1;	// variable-length extension right after the inner request block
+	pInner->Srb.SenseInfoBuffer = &pRequest->Sense;
+	memmove(pInner->Srb.Cdb, &pRequest->Sense, pRequest->CdbLength);
+	switch (opCode)
+	{
+	default:
+		if (pMdl)
+		{
+			pInner->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
+				pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE,
+				NormalPagePriority | MdlMappingNoExecute);
+			if (!pInner->Srb.DataBuffer)
+			{
+				status = STATUS_INSUFFICIENT_RESOURCES;
+				break;
+			}
+		}
+		break;
+	case SCSI_OP_CODE_WRITE_6:
+	case SCSI_OP_CODE_WRITE_10:
+	case SCSI_OP_CODE_WRITE_12:
+	case SCSI_OP_CODE_WRITE_16:
+	case SCSI_OP_CODE_READ_6:
+	case SCSI_OP_CODE_READ_10:
+	case SCSI_OP_CODE_READ_12:
+	case SCSI_OP_CODE_READ_16:
+		break;
+	}
+
+	if (NT_SUCCESS(status))
+		status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pInner, pMdl, pPacket->bUnkFlag,
+		pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
+	else
+		pRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
+
+	if (STATUS_PENDING != status)
+	{
+		EvhdPostProcessScsiPacket(pPacket, status);
+		status = VstorCompleteScsiRequest(pPacket);
+	}
+
+	return status;
 }
 
 NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(type);
+	NTSTATUS status = STATUS_SUCCESS;
+	EDiskInfoType Request = EDiskInfoType_Geometry;
+	DiskInfoResponse Response = { 0 };
+
 	UNREFERENCED_PARAMETER(unused1);
 	UNREFERENCED_PARAMETER(unused2);
-	UNREFERENCED_PARAMETER(pBuffer);
-	UNREFERENCED_PARAMETER(pBufferSize);
-	return STATUS_NOT_SUPPORTED;
+
+	if (EDiskInfo_Format == type)
+	{
+		ASSERT(0x38 == sizeof(DiskInfo_Format));
+		if (*pBufferSize < sizeof(DiskInfo_Format))
+			return status = STATUS_BUFFER_TOO_SMALL;
+		DiskInfo_Format *pRes = (DiskInfo_Format *)pBuffer;
+		memset(pBuffer, 0, sizeof(DiskInfo_Format));
+
+		Request = EDiskInfoType_Type;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
+			return status;
+		}
+		pRes->DiskType = Response.vals[0].dwLow;
+
+		Request = EDiskInfoType_ParserInfo;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
+			return status;
+		}
+		pRes->DiskFormat = Response.vals[0].dwLow;
+
+		Request = EDiskInfoType_Geometry;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+			return status;
+		}
+		pRes->dwBlockSize = Response.vals[2].dwLow;
+		pRes->qwDiskSize = Response.vals[1].qword;
+
+		Request = EDiskInfoType_LinkageId;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve linkage identifier. 0x%0X\n", status);
+			return status;
+		}
+		pRes->LinkageId = Response.guid;
+
+		Request = EDiskInfoType_InUseFlag;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve in use flag. 0x%0X\n", status);
+			return status;
+		}
+		pRes->bIsInUse = (BOOLEAN)Response.vals[0].dwLow;
+
+		Request = EDiskInfoType_IsFullyAllocated;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve fully allocated flag. 0x%0X\n", status);
+			return status;
+		}
+		pRes->bIsFullyAllocated = (BOOLEAN)Response.vals[0].dwLow;
+
+		Request = EDiskInfoType_Unk9;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve unk9 flag. 0x%0X\n", status);
+			return status;
+		}
+		pRes->f_1C = (BOOLEAN)Response.vals[0].dwLow;
+
+		Request = EDiskInfoType_Page83Data;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
+			return status;
+		}
+		pRes->DiskIdentifier = Response.guid;
+
+		*pBufferSize = sizeof(DiskInfo_Format);
+	}
+	else if (EDiskInfo_Fragmentation == type)
+	{
+		status = STATUS_INVALID_DEVICE_REQUEST;
+	}
+	else if (EDiskInfo_ParentNameList == type)
+	{
+#pragma pack(push, 1)
+		typedef struct {
+			ULONG64 f_0;
+			UCHAR f_8;
+			BOOLEAN bHaveParent;
+			UCHAR _align[2];
+			INT size;
+			UCHAR data[1];
+		} ParentNameResponse;
+
+		typedef struct {
+			UCHAR f_0;
+			BOOLEAN bHaveParent;
+			UCHAR _align[2];
+			ULONG size;
+			UCHAR data[1];
+		} ResultBuffer;
+#pragma pack(pop)
+		if (*pBufferSize < 8)
+			return status = STATUS_BUFFER_TOO_SMALL;
+		ResultBuffer *pRes = (ResultBuffer *)pBuffer;
+		memset(pRes, 0, 8);
+		INT ResponseBufferSize = *pBufferSize + 0x18;
+		ParentNameResponse *ResponseBuffer = (ParentNameResponse *)ExAllocatePoolWithTag(PagedPool, ResponseBufferSize, EvhdPoolTag);
+		if (!ResponseBuffer)
+			return STATUS_INSUFFICIENT_RESOURCES;
+		Request = EDiskInfoType_ParentNameList;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			ResponseBuffer, ResponseBufferSize);
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+			ExFreePoolWithTag(ResponseBuffer, EvhdPoolTag);
+			return status;
+		}
+		pRes->f_0 = ResponseBuffer->f_8;
+		pRes->bHaveParent = ResponseBuffer->bHaveParent;
+		pRes->size = ResponseBuffer->size;
+		if (ResponseBuffer->bHaveParent)
+		{
+			memmove(pRes->data, ResponseBuffer->data, pRes->size);
+			ExFreePoolWithTag(ResponseBuffer, EvhdPoolTag);
+			*pBufferSize = 8 + pRes->size;
+		}
+		else
+			*pBufferSize = 8;
+	}
+	else if (EDiskInfo_PreloadDiskMetadata == type)
+	{
+		if (*pBufferSize < sizeof(BOOLEAN))
+			return status = STATUS_BUFFER_TOO_SMALL;
+		BOOLEAN *pRes = (BOOLEAN *)pBuffer;
+		BOOLEAN Response = FALSE;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_PRELOAD_DISK_METADATA_V2, NULL, 0,
+			&Response, sizeof(BOOLEAN));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+			return status;
+		}
+		*pRes = Response;
+		*pBufferSize = sizeof(BOOLEAN);
+	}
+	else if (EDiskInfo_Geometry == type)
+	{
+		ASSERT(0x10 == sizeof(DiskInfo_Geometry));
+		if (*pBufferSize < sizeof(DiskInfo_Geometry))
+			return status = STATUS_BUFFER_TOO_SMALL;
+		DiskInfo_Geometry *pRes = (DiskInfo_Geometry *)pBuffer;
+		Request = EDiskInfoType_Geometry;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+			return status;
+		}
+		pRes->dwSectorSize = Response.vals[2].dwHigh;
+		pRes->qwDiskSize = Response.vals[0].qword;
+		Request = EDiskInfoType_NumSectors;
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
+			&Response, sizeof(DiskInfoResponse));
+		if (!NT_SUCCESS(status))
+		{
+			DEBUG("Failed to retrieve number of sectors. 0x%0X\n", status);
+			return status;
+		}
+		pRes->dwNumSectors = Response.vals[0].dwLow;
+		*pBufferSize = sizeof(DiskInfo_Geometry);
+	}
+	else
+	{
+		DEBUG("Unknown Disk info type %X\n", type);
+		status = STATUS_INVALID_DEVICE_REQUEST;
+	}
+
+	return status;
 }
 
 NTSTATUS EVhdQuerySaveVersionDisk(ParserInstance *parser, INT *pVersion)
 {
 	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pVersion);
+	*pVersion = 1;
 	return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS EVhdSaveDisk(ParserInstance *parser, PVOID data, ULONG32 size, ULONG32 *dataStored)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(data);
-	UNREFERENCED_PARAMETER(size);
-	UNREFERENCED_PARAMETER(dataStored);
-	return STATUS_NOT_SUPPORTED;
+	ULONG32 dwSize = parser->dwDiskSaveSize + 0x20;
+	if (dwSize < parser->dwDiskSaveSize)
+		return STATUS_INTEGER_OVERFLOW;
+	if (dwSize > size)
+		return STATUS_BUFFER_TOO_SMALL;
+	parser->Io.pfnSaveData(parser->Io.pIoInterface, (UCHAR *)data + 0x20, parser->dwDiskSaveSize);
+	*dataStored = dwSize;
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG32 size)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(revision);
-	UNREFERENCED_PARAMETER(data);
-	UNREFERENCED_PARAMETER(size);
-	return STATUS_NOT_SUPPORTED;
+	if (revision != 1)	 // Assigned by IOCTL_VIRTUAL_DISK_SET_SAVE_VERSION
+		return STATUS_REVISION_MISMATCH;
+	ULONG32 dwSize = parser->dwDiskSaveSize + 0x20;
+	if (dwSize < parser->dwDiskSaveSize)
+		return STATUS_INTEGER_OVERFLOW;
+	if (dwSize > size)
+		return STATUS_INVALID_BUFFER_SIZE;
+
+	parser->Io.pfnRestoreData(parser->Io.pIoInterface, (UCHAR *)data + 0x20, parser->dwDiskSaveSize);
+
+	return STATUS_SUCCESS;
 }
 
-NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour)
+static NTSTATUS EvhdSetCachePolicy(ParserInstance *parser, BOOLEAN bEnable)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(behaviour);
-	return STATUS_NOT_SUPPORTED;
+#pragma pack(push, 1)
+	struct {
+		ULONG dwVersion;
+		USHORT wFlags;
+		UCHAR _align[2];
+	} Request = { 0 };
+#pragma pack(pop)
+	Request.dwVersion = 1;
+	Request.wFlags = bEnable ? 4 : 0;
+	return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_SET_CACHE_POLICY, NULL, 0, NULL, 0);
 }
 
-NTSTATUS EVhdSetQosConfigurationDisk(ParserInstance *parser, PVOID pConfig)
+NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour, BOOLEAN *enableCache, INT param)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pConfig);
-	return STATUS_NOT_SUPPORTED;
+	switch (behaviour)
+	{
+	case 0x40000001:
+		return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_ISO_EJECT_MEDIA, NULL, 0, NULL, 0);
+	case 0x40000002:
+		return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_ISO_INSERT_MEDIA, NULL, 0, NULL, 0);
+	case 0x40000003:
+		if (param < 1)
+			return STATUS_INVALID_PARAMETER;
+		return EvhdSetCachePolicy(parser, *enableCache != 0);
+	default:
+		return STATUS_INVALID_DEVICE_REQUEST;
+	}
 }
 
-NTSTATUS EVhdGetQosInformationDisk(ParserInstance *parser, PVOID pInfo)
+NTSTATUS EVhdSetQosPolicyDisk(ParserInstance *parser, PVOID pInputBuffer, ULONG32 dwSize)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pInfo);
-	return STATUS_NOT_SUPPORTED;
+	return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_SET_QOS_POLICY, pInputBuffer, dwSize, NULL, 0);
+}
+
+static NTSTATUS EvhdGetQosStatusCompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp, PVOID pContext)
+{
+	UNREFERENCED_PARAMETER(DeviceObject);
+	ParserInstance *parser = (ParserInstance *)pContext;
+	parser->pfnQoSStatusCallback(pIrp->IoStatus.Status, parser->pQoSStatusBuffer, parser->pQoSStatusInterface);
+	return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS EVhdGetQosStatusDisk(ParserInstance *parser, PVOID pSystemBuffer, ULONG32 dwSize, QoSStatusCompletionRoutine pfnCompletionCb, PVOID pInterface)
+{
+	parser->pQoSStatusInterface = pInterface;
+	parser->pfnQoSStatusCallback = pfnCompletionCb;
+	memmove(parser->pQoSStatusBuffer, pSystemBuffer, dwSize);
+	return EvhdQosStatusControl(parser, IOCTL_STORAGE_VHD_GET_QOS_STATUS, dwSize, 0x58, EvhdGetQosStatusCompletionRoutine);
 }
 
 NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *pParams)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pParams);
-	return STATUS_NOT_SUPPORTED;
+	CTParameters Response = { 0 };
+	NTSTATUS status = STATUS_SUCCESS;
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_GET_CTLOG_INFO, NULL, 0, &Response, sizeof(Response));
+	if (NT_SUCCESS(status))
+	{
+		pParams->dwVersion = Response.dwVersion;
+		pParams->qwUncommitedSize = Response.qwUncommitedSize;
+	}
+	return status;
 }
 
-NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTEnableParam *pParams)
+NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTStartParam *pParam)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pParams);
-	return STATUS_NOT_SUPPORTED;
+#pragma pack(push, 1)
+	typedef struct {
+		ULONG32 dwInnerSize;
+		ULONG32 dwSize;
+		ULONG64 qwMaximumDiffSize;
+		GUID CdpSnapshotId;
+		BOOLEAN bSkipSnapshoting;
+		UCHAR _reserved1[7];
+		ULONG32 FeatureFlags;	// overrides flags
+		UCHAR _reserved2[20];
+	} EnableChangeTrackingRequest;
+
+#pragma pack(pop)						  
+	NTSTATUS status = STATUS_SUCCESS;
+
+	EnableChangeTrackingRequest *pRequest = ExAllocatePoolWithTag(PagedPool, sizeof(EnableChangeTrackingRequest) + pParam->dwInnerBufferSize, EvhdPoolTag);
+	if (!pRequest)
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	memmove((UCHAR *)pRequest + sizeof(EnableChangeTrackingRequest), (UCHAR *)pParam + sizeof(CTStartParam), pParam->dwInnerBufferSize);
+
+	pRequest->dwSize = sizeof(EnableChangeTrackingRequest);
+	pRequest->dwInnerSize = pParam->dwInnerBufferSize;
+	pRequest->qwMaximumDiffSize = pParam->qwMaximumDiffSize;
+	pRequest->CdpSnapshotId = pParam->CdpSnapshotId;
+	pRequest->bSkipSnapshoting = pParam->SkipSnapshoting;
+	pRequest->FeatureFlags = pParam->FeatureFlags;
+
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_ENABLE_TRACKING, pRequest, sizeof(EnableChangeTrackingRequest) + pParam->dwInnerBufferSize, NULL, 0);
+
+	ExFreePoolWithTag(pRequest, EvhdPoolTag);
+
+	return status;
 }
 
-NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *dwBytesTransferred, ULONG32 bForce)
+NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *pInput, ULONG32 *pOutput)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(dwBytesTransferred);
-	UNREFERENCED_PARAMETER(bForce);
-	return STATUS_NOT_SUPPORTED;
+	ULONG32 Request = *pInput;
+	ULONG32 Response;
+	NTSTATUS status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_DISABLE_TRACKING, &Request, sizeof(Request), &Response, sizeof(Response));
+	if (NT_SUCCESS(status))
+		*pOutput = Response;
+
+	return status;
 }
 
-NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParams)
+NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParam, ULONG32 *pOutput)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pParams);
-	return STATUS_NOT_SUPPORTED;
+
+#pragma pack(push, 1)
+	typedef struct {
+		ULONG32 dwSize;
+		ULONG32 dwInnerSize;
+		GUID OfflineCdpAppId;
+		ULONG32 CTState;
+		ULONG32 FeatureFlags;
+		GUID CdpSnapshotId;
+		UCHAR _reserved[16];
+	} SwitchCTLogsRequest;
+
+#pragma pack(pop)						  
+	NTSTATUS status = STATUS_SUCCESS;
+	ULONG32 Response;
+
+	SwitchCTLogsRequest *pRequest = ExAllocatePoolWithTag(PagedPool, sizeof(SwitchCTLogsRequest) + pParam->dwInnerBufferSize, EvhdPoolTag);
+	if (!pRequest)
+		return STATUS_INSUFFICIENT_RESOURCES;
+
+	pRequest->dwSize = sizeof(SwitchCTLogsRequest);
+	pRequest->dwInnerSize = pParam->dwInnerBufferSize;
+	pRequest->OfflineCdpAppId = pParam->OfflineCdpId;
+	pRequest->CTState = pParam->CTState;
+	pRequest->FeatureFlags = pParam->FeatureFlags;
+	pRequest->CdpSnapshotId = pParam->CdpSnapshotId;
+	memmove((UCHAR *)pRequest + sizeof(SwitchCTLogsRequest), (UCHAR *)pParam + sizeof(CTSwitchLogParam), pParam->dwInnerBufferSize);
+
+	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_CHANGE_CTLOG_FILE, pRequest, sizeof(SwitchCTLogsRequest) + pParam->dwInnerBufferSize, &Response, sizeof(Response));
+	if (NT_SUCCESS(status))
+		*pOutput = Response;
+
+	ExFreePoolWithTag(pRequest, EvhdPoolTag);
+
+	return status;
 }
 
 NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface)
