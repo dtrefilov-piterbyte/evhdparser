@@ -9,45 +9,55 @@
 #pragma warning(disable : 4201) // nonstandard extension: nameless struct/union
 
 typedef struct {
-	ULONG32		BytesTransferred;
+	ULONG32		dwVersion;
 	ULONG32		_align;
-	void		*pBuffer;
+	ULONG64		qwUncommitedSize;	// Current size of the volatile backing store
 } CTParameters;
 
 typedef struct {
-	ULONG32		dwUnk1;
-	ULONG32		dwSize;
-	GUID		unk2;
-	ULONG64		unk3;
-	UCHAR		unk4;
+	ULONG32		dwVersion;
+	ULONG32		dwInnerBufferSize;
+	GUID		CdpSnapshotId;		// CDP stands for continuos data protection
+	ULONG64		qwMaximumDiffSize;	// maximum size of the volatile backing store
+	UCHAR		SkipSnapshoting;
 	UCHAR		_align[3];
-	ULONG32		unk5;
-} CTEnableParam;
+	ULONG32		FeatureFlags;
+} CTStartParam;
 
 typedef struct {
-	ULONG32		dwUnk1;
-	ULONG32		dwSize;
-	GUID		unk2;
-	ULONG64		unk3;
-	GUID		unk4;
+	ULONG32		dwVersion;
+	ULONG32		dwInnerBufferSize;
+	GUID		OfflineCdpId;
+	ULONG32		CTState;			// 0 - initial, 1 - start (create differencing backing store), 2 - ?, 3 - ?, 4 - ?  
+	ULONG32		FeatureFlags;
+	GUID		CdpSnapshotId;
 } CTSwitchLogParam;
 
-typedef NTSTATUS(*RecoveryStatusCompletionRoutine)(void *, ULONG32);
-
+typedef NTSTATUS(*QoSStatusCompletionRoutine)(NTSTATUS, void *, void *);
+typedef NTSTATUS(*RecoveryStatusCompletionRoutine)(void *, NTSTATUS);
 typedef NTSTATUS(*MetaOperationCompletionRoutine)(void *);
 
 typedef enum {
 	EMetaOperation_Snapshot,
 	EMetaOperation_Resize,
-	EMetaOperation_Complete,
+	EMetaOperation_Optimize,
 	EMetaOperation_Extract
 } EMetaOperation;
 
 typedef struct {
+	EMetaOperation	Type;
+	ULONG			dwUnk;
+	IO_STATUS_BLOCK	Status;
+	UCHAR			Reserved[16];
+
+	// User defined request
+} MetaOperationBuffer;
+
+typedef struct {
 	struct _ParserInstance *pParser;
 	MetaOperationCompletionRoutine pfnCompletionRoutine;
-	void *pCompletionInterface;
-	void *SystemBuffer;
+	void *pInterface;
+	MetaOperationBuffer *pBuffer;
 	PIRP pIrp;
 } MetaOperation;
 
@@ -75,14 +85,6 @@ typedef struct _MountInfo {
 	BOOLEAN			bFastClose;
 } MountInfo;
 
-typedef struct _RecoveryStatusInfo
-{
-	PIRP							pIrp;
-	RecoveryStatusCompletionRoutine	pfnRecoveryStatusCallback;
-	PVOID							pRecoverySubscriberInterface;
-} RecoveryStatusInfo;
-
-
 typedef NTSTATUS(*CompleteScsiRequest_t)(struct _ScsiPacket *, NTSTATUS);
 typedef NTSTATUS(*SendNotification_t)(void *, INT);
 typedef NTSTATUS(*SendMediaNotification_t)(void *);
@@ -92,7 +94,7 @@ typedef struct{
 	INT dwFlags;
 	UCHAR Unused[12];
 	USHORT wFlags;
-	USHORT wFlags2;
+	USHORT wMountFlags;	// 1 - read only, 4 - ignore sync requests
 	GUID unkGuid;	// TODO:
 	CompleteScsiRequest_t pfnCompleteScsiRequest;
 	SendMediaNotification_t pfnSendMediaNotification;
@@ -192,12 +194,12 @@ typedef NTSTATUS(*ParserSetBehaviourDisk_t)(struct _ParserInstance *, INT);
 typedef NTSTATUS(*ParserSetQosPolicyDisk_t)(struct _ParserInstance *, void *, ULONG32);
 typedef NTSTATUS(*ParserGetQosStatusDisk_t)(struct _ParserInstance *, void *);
 typedef NTSTATUS(*ParserChangeTrackingGetParameters_t)(struct _ParserInstance *, CTParameters *);
-typedef NTSTATUS(*ParserChangeTrackingStart_t)(struct _ParserInstance *, CTEnableParam *);
+typedef NTSTATUS(*ParserChangeTrackingStart_t)(struct _ParserInstance *, CTStartParam *);
 typedef NTSTATUS(*ParserChangeTrackingStop_t)(struct _ParserInstance *, const ULONG32 *, ULONG32 *);
 typedef NTSTATUS(*ParserChangeTrackingSwitchLogs_t)(struct _ParserInstance *, CTSwitchLogParam *);
 typedef NTSTATUS(*ParserNotifyRecoveryStatus_t)(struct _ParserInstance *, RecoveryStatusCompletionRoutine, void *);
 typedef NTSTATUS(*ParserGetRecoveryStatus_t)(struct _ParserInstance *, ULONG32 *);
-typedef NTSTATUS(*ParserPrepareMetaOperation_t)(struct _ParserInstance *, void *, MetaOperationCompletionRoutine, void *, MetaOperation **);
+typedef NTSTATUS(*ParserPrepareMetaOperation_t)(struct _ParserInstance *, MetaOperationBuffer *, MetaOperationCompletionRoutine, void *, MetaOperation **);
 typedef NTSTATUS(*MetaOperationCallback_t)(MetaOperation *);
 typedef NTSTATUS(*ParserDeleteSnapshot_t)(struct _ParserInstance *, void *);
 typedef NTSTATUS(*ParserQueryChanges_t)(struct _ParserInstance *, void *, ULONG32);

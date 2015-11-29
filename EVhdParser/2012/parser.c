@@ -375,7 +375,7 @@ VOID EVhdGetGeometry(ParserInstance *parser, ULONG32 *pSectorSize, ULONG64 *pDis
 	}
 }
 
-VOID EVhdGetCapabilities(ParserInstance *parser, ParserCapabilities *pCapabilities)
+VOID EVhdGetCapabilities(ParserInstance *parser, PPARSER_CAPABILITIES pCapabilities)
 {
 	if (parser && pCapabilities)
 	{
@@ -449,13 +449,13 @@ NTSTATUS EVhdExecuteSrb(SrbPacket *pPacket)
 	return status;
 }
 
-NTSTATUS EVhdBeginSave(ParserInstance *parser, SaveInfo *pSaveInfo)
+NTSTATUS EVhdBeginSave(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo)
 {
 	ULONG32 dwFinalSize = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	if (!pSaveInfo)
 		return STATUS_INVALID_PARAMETER;
-	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(SaveDataHeader), &dwFinalSize);
+	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(PARSER_STATE), &dwFinalSize);
 	if (!NT_SUCCESS(status))
 		return status;
 	pSaveInfo->dwVersion = 1;
@@ -463,38 +463,35 @@ NTSTATUS EVhdBeginSave(ParserInstance *parser, SaveInfo *pSaveInfo)
 	return status;
 }
 
-NTSTATUS EVhdSaveData(ParserInstance *parser, SaveDataHeader *pData, ULONG32 *pSize)
+NTSTATUS EVhdSaveData(ParserInstance *parser, PVOID pData, ULONG32 *pSize)
 {
 	ULONG32 dwFinalSize = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	KIRQL oldIrql = 0;
 	if (!parser || !pData || !pSize)
 		return STATUS_INVALID_PARAMETER;
-	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(SaveDataHeader), &dwFinalSize);
+	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(PARSER_STATE), &dwFinalSize);
 	if (!NT_SUCCESS(status))
 		return status;
 	if (dwFinalSize <= *pSize)
 		return STATUS_BUFFER_TOO_SMALL;
 	if (!parser->bSynchronouseIo)
 	{
-		DEBUG("Requested asynchronouse Io for synchronouse parser instance");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	status = parser->QoS.pfnSaveData(parser->QoS.pIoInterface, pData + 1, parser->QoS.dwDiskSaveSize);
+	PPARSER_STATE pState = pData;
+	status = parser->QoS.pfnSaveData(parser->QoS.pIoInterface, pState + 1, parser->QoS.dwDiskSaveSize);
 	if (NT_SUCCESS(status))
 	{
 		oldIrql = KeAcquireSpinLockRaiseToDpc(&parser->SpinLock);
-		pData->qwUnk1 = parser->qwUnk1;
-		pData->qwUnk2 = parser->qwUnk2;
-		pData->wUnk3 = parser->wUnk3;
-		pData->bCacheState = parser->bCacheState;
+		*pState = parser->State;
 		KeReleaseSpinLock(&parser->SpinLock, oldIrql);
 	}
 	return status;
 
 }
 
-NTSTATUS EVhdBeginRestore(ParserInstance *parser, const SaveInfo *pSaveInfo)
+NTSTATUS EVhdBeginRestore(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo)
 {
 	UNREFERENCED_PARAMETER(parser);
 	if (!pSaveInfo || pSaveInfo->dwVersion != 1)
@@ -502,14 +499,14 @@ NTSTATUS EVhdBeginRestore(ParserInstance *parser, const SaveInfo *pSaveInfo)
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS EVhdRestoreData(ParserInstance *parser, const SaveDataHeader *pData, ULONG32 size)
+NTSTATUS EVhdRestoreData(ParserInstance *parser, PVOID pData, ULONG32 size)
 {
 	ULONG32 dwFinalSize = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	KIRQL oldIrql = 0;
 	if (!parser || !pData)
 		return STATUS_INVALID_PARAMETER;
-	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(SaveDataHeader), &dwFinalSize);
+	status = EvhdGetFinalSaveSize(parser->QoS.dwDiskSaveSize, sizeof(PARSER_STATE), &dwFinalSize);
 	if (!NT_SUCCESS(status))
 		return status;
 	if (dwFinalSize <= size)
@@ -519,14 +516,12 @@ NTSTATUS EVhdRestoreData(ParserInstance *parser, const SaveDataHeader *pData, UL
 		DEBUG("Requested asynchronouse Io for synchronouse parser instance");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	status = parser->QoS.pfnRestoreData(parser->QoS.pIoInterface, pData + 1, parser->QoS.dwDiskSaveSize);
+	status = parser->QoS.pfnRestoreData(parser->QoS.pIoInterface, (PUCHAR)pData + sizeof(PARSER_STATE),
+		parser->QoS.dwDiskSaveSize);
 	if (NT_SUCCESS(status))
 	{
 		oldIrql = KeAcquireSpinLockRaiseToDpc(&parser->SpinLock);
-		parser->qwUnk1 = pData->qwUnk1;
-		parser->qwUnk2 = pData->qwUnk2;
-		parser->wUnk3 = pData->wUnk3;
-		parser->bCacheState = pData->bCacheState;
+		parser->State = *(PPARSER_STATE)pData;
 		KeReleaseSpinLock(&parser->SpinLock, oldIrql);
 	}
 	return status;
@@ -536,6 +531,6 @@ NTSTATUS EVhdSetCacheState(ParserInstance *parser, BOOLEAN newState)
 {
 	if (!parser)
 		return STATUS_INVALID_PARAMETER;
-	parser->bCacheState = newState;
+	parser->State.bCache = newState;
 	return STATUS_SUCCESS;
 }

@@ -308,6 +308,7 @@
     <ClInclude Include="cipher.h" />
     <ClInclude Include="CipherOpts.h" />
     <ClInclude Include="Control.h" />
+    <ClInclude Include="ExtIface.h" />
     <ClInclude Include="Gost89Cipher.h" />
     <ClInclude Include="Guids.h" />
     <ClInclude Include="Ioctl.h" />

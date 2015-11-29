@@ -18,6 +18,7 @@ Global
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Debug|x64.ActiveCfg = Win10 Debug|x64
+		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Debug|x64.Build.0 = Win10 Debug|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Release|x64.ActiveCfg = Win10 Release|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win10 Release|x64.Build.0 = Win10 Release|x64
 		{DC5E1554-8CCB-4E55-9F20-7CECE509BF55}.Win8 Debug|x64.ActiveCfg = Win8 Debug|x64

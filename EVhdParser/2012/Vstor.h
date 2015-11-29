@@ -30,26 +30,18 @@ typedef struct {
 	VstorPrepare_t					pfnVstorSrbPrepare;
 } SrbCallbackInfo;
 
-typedef struct _ParserCapabilities {
+typedef struct _PARSER_CAPABILITIES {
 	ULONG32		dwUnk1;
 	ULONG32		dwUnk2;
 	ULONG32		dwUnk3;
 	BOOLEAN		bMounted;
-} ParserCapabilities;
+} PARSER_CAPABILITIES, *PPARSER_CAPABILITIES;
 
-typedef struct _SaveInfo {
+typedef struct _PARSER_SAVE_STATE_INFO {
 	ULONG32		dwVersion;
 	ULONG32		dwFinalSize;
-} SaveInfo;
-
-typedef struct _SaveDataHeader {
-	ULONG64		qwUnk1;
-	ULONG64		qwUnk2;
-	USHORT		wUnk3;
-	UCHAR		bCacheState;
-	UCHAR		Reserved[13];
-} SaveDataHeader;
-								   
+} PARSER_SAVE_STATE_INFO, *PPARSER_SAVE_STATE_INFO;
+			   
 typedef struct _SrbPacketRequest {
 	USHORT				wSize;
 	UCHAR				SrbStatus;
@@ -101,13 +93,13 @@ typedef struct _VstorSrbPrepareRequest {
 typedef NTSTATUS(*ParserInit_t)(SrbCallbackInfo *, PCUNICODE_STRING, ULONG32, void **);
 typedef VOID(*ParserCleanup_t)(struct _ParserInstance *);
 typedef VOID(*ParserGetGeometry_t)(struct _ParserInstance *, ULONG32 *, ULONG64 *, ULONG32 *);
-typedef VOID(*ParserGetCapabilities_t)(struct _ParserInstance *, ParserCapabilities *);
+typedef VOID(*ParserGetCapabilities_t)(struct _ParserInstance *, PPARSER_CAPABILITIES);
 typedef NTSTATUS(*ParserMount_t)(struct _ParserInstance *, BOOLEAN, BOOLEAN);
 typedef NTSTATUS(*ParserExecuteSrb_t)(SrbPacket *);
-typedef NTSTATUS(*ParserBeginSave_t)(struct _ParserInstance *, SaveInfo *);
-typedef NTSTATUS(*ParserSaveData_t)(struct _ParserInstance *, SaveDataHeader *, ULONG32 *);
-typedef NTSTATUS(*ParserBeginRestore_t)(struct _ParserInstance *, const SaveInfo *);
-typedef NTSTATUS(*ParserRestoreData_t)(struct _ParserInstance *, const SaveDataHeader *, ULONG32);
+typedef NTSTATUS(*ParserBeginSave_t)(struct _ParserInstance *, PPARSER_SAVE_STATE_INFO);
+typedef NTSTATUS(*ParserSaveData_t)(struct _ParserInstance *, PVOID, ULONG32 *);
+typedef NTSTATUS(*ParserBeginRestore_t)(struct _ParserInstance *, PPARSER_SAVE_STATE_INFO);
+typedef NTSTATUS(*ParserRestoreData_t)(struct _ParserInstance *, PVOID, ULONG32);
 typedef NTSTATUS(*ParserSetCacheState_t)(struct _ParserInstance *, BOOLEAN);
 typedef NTSTATUS(*ParserCustomCommand_t)(struct _ParserInstance *);
 

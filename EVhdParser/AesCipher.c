@@ -30,21 +30,21 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		ExFreePoolWithTag(aesCipher, AesCipherTag);
 		return status;
 	}
-	switch (aesConfig->ChainingMode)
+	switch (aesConfig->OperationMode)
 	{
-	case ChainingMode_CBC:
+	case OperationMode_CBC:
 		pszChainMode = BCRYPT_CHAIN_MODE_CBC;
 		break;
-	case ChainingMode_CFB:
+	case OperationMode_CFB:
 		pszChainMode = BCRYPT_CHAIN_MODE_CFB;
 		break;
-	case ChainingMode_CCM:
+	case OperationMode_CCM:
 		pszChainMode = BCRYPT_CHAIN_MODE_CCM;
 		break;
-	case ChainingMode_GCM:
+	case OperationMode_GCM:
 		pszChainMode = BCRYPT_CHAIN_MODE_GCM;
 		break;
-	case ChainingMode_ECB:
+	case OperationMode_ECB:
 	default:
 		pszChainMode = BCRYPT_CHAIN_MODE_ECB;
 		break;

@@ -159,7 +159,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			.DiskId = vhdId,
 			.Algorithm = ECipherAlgo_Gost89
 		};
-		request.Opts.Gost89.ChainingMode = ChainingMode_CFB;
+		request.Opts.Gost89.OperationMode = OperationMode_CFB;
 		request.Opts.Gost89.SBlock = ESBlock_tc26_gost28147_param_Z;
 		memcpy(request.Opts.Gost89.Key, rgbTest256Key, sizeof(request.Opts.Gost89.Key));
 

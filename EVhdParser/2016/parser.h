@@ -7,15 +7,15 @@
 typedef struct _ParserInstance {
 	HANDLE			FileHandle;
 	PFILE_OBJECT	pVhdmpFileObject;
-	UCHAR			PathId;
-	UCHAR			TargetId;
-	UCHAR			LunId;
+	UCHAR			ScsiPathId;
+	UCHAR			ScsiTargetId;
+	UCHAR			ScsiLun;
 	BOOLEAN			bMounted;
 	BOOLEAN			bIoRegistered;
 	BOOLEAN			bFastPause;
 	BOOLEAN			bFastClose;
 	PVOID			pVstorInterface;
-	IoInfo			IoInfo;
+	IoInfo			Io;
 	ULONG32			dwDiskSaveSize;
 	ULONG32			dwInnerBufferSize;
 	
@@ -24,15 +24,16 @@ typedef struct _ParserInstance {
 
 	PIRP			pQoSStatusIrp;
 	PVOID			pQoSStatusBuffer;
+	QoSStatusCompletionRoutine pfnQoSStatusCallback;
+	PVOID			pQoSStatusInterface;
 
 	BOOLEAN			bResiliencyEnabled;
 	EX_RUNDOWN_REF	RecoveryRundownProtection;
 	PIRP			pRecoveryStatusIrp;
 	RecoveryStatusCompletionRoutine	pfnRecoveryStatusCallback;
+	PVOID			pRecoveryStatusInterface;
 
-	USHORT			wUnkIoFlags;
-
-	RecoveryStatusInfo	RecoveryStatusInfo;
+	USHORT			wMountFlags;
 
 } ParserInstance;
 
@@ -41,25 +42,27 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 VOID EVhdCloseDisk(ParserInstance *parser);
 NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, PGUID pUnkGuid, __out MountInfo *mountInfo);
 NTSTATUS EVhdDismountDisk(ParserInstance *parser);
-NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser, /* TODO */ ULONG32 unk);
+NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser, ULONG32 param);
 NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket);
 NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize);
 NTSTATUS EVhdQuerySaveVersionDisk(ParserInstance *parser, INT *pVersion);
 NTSTATUS EVhdSaveDisk(ParserInstance *parser, PVOID data, ULONG32 size, ULONG32 *dataStored);
 NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG32 size);
-NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour);
-NTSTATUS EVhdSetQosConfigurationDisk(ParserInstance *parser, PVOID pConfig);
-NTSTATUS EVhdGetQosInformationDisk(ParserInstance *parser, PVOID pInfo);
+NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour, BOOLEAN *enableCache, INT param /* = 1 */);
+NTSTATUS EVhdSetQosPolicyDisk(ParserInstance *parser, PVOID pInputBuffer, ULONG32 dwSize);
+NTSTATUS EVhdGetQosStatusDisk(ParserInstance *parser, PVOID pSystemBuffer, ULONG32 dwSize, QoSStatusCompletionRoutine pfnCompletionCb, PVOID pInterface);
+NTSTATUS EVhdChangeTrackingSetParameters(ParserInstance *parser);
 NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *pParams);
-NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTEnableParam *pParams);
-NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *dwBytesTransferred, ULONG32 bForce);
-NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParams);
+NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTStartParam *pParams);
+NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *pInput, ULONG32 *pOutput);
+NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParams, ULONG32 *pOutput);
+NTSTATUS EVhdEnableResiliency(ParserInstance *parser);
 NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface);
 NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus);
-NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);
+NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, MetaOperationBuffer *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);
 NTSTATUS EVhdStartMetaOperation(MetaOperation *operation);
 NTSTATUS EVhdCancelMetaOperation(MetaOperation *operation);
-NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *operation);
+NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *operation, PVOID pProgress);
 NTSTATUS EVhdCleanupMetaOperation(MetaOperation *operation);
-NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer /* TODO:sizeof=0x18 */);
-NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pInputBuffer, ULONG32 dwInputBufferLength);
+NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer);
+NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pSystemBuffer, ULONG32 dwInputBufferLength, ULONG32 dwOutputBufferLength);

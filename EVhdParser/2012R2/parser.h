@@ -4,6 +4,14 @@
 #include "Vstor.h"
 #include "cipher.h"
 
+typedef struct _PARSER_STATE {
+	ULONG64		qwUnk1;
+	ULONG64		qwUnk2;
+	USHORT		wUnk3;
+	UCHAR		bCache;
+	UCHAR		Reserved[13];
+} PARSER_STATE, *PPARSER_STATE;
+
 typedef struct _ParserInstance {
 	PFILE_OBJECT	pVhdmpFileObject;
 	HANDLE			FileHandle;
@@ -15,9 +23,9 @@ typedef struct _ParserInstance {
 	BOOLEAN			bFastPause;
 	INT				dwNumSectors;
 	PVOID			pVstorInterface;
-	IoInfo			Io;
+	PARSER_IO_INFO	Io;
 	BOOLEAN			bQosRegistered;
-	QosInfo			Qos;
+	PARSER_QOS_INFO	Qos;
 	ULONG32			dwDiskSaveSize;
 	INT				dwInnerBufferSize;
 	PIRP			pIrp;
@@ -29,7 +37,7 @@ typedef struct _ParserInstance {
 /** Forward declaration of parser handler */
 NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId, PVOID vstorInterface, ParserInstance **outParser);
 VOID EVhdCloseDisk(ParserInstance *parser);
-NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags1, MountInfo *mountInfo);
+NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags1, PARSER_MOUNT_INFO *mountInfo);
 NTSTATUS EVhdDismountDisk(ParserInstance *parser);
 NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser);
 NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket);

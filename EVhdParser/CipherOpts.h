@@ -5,14 +5,14 @@
 #endif
 
 typedef enum {
-	ChainingMode_Unknown,
-	ChainingMode_CBC,
-	ChainingMode_ECB,
-	ChainingMode_CFB,
-	ChainingMode_OFB,
-	ChainingMode_CCM,
-	ChainingMode_GCM
-} EChainingMode;
+	OperationMode_Unknown,
+	OperationMode_CBC,
+	OperationMode_ECB,
+	OperationMode_CFB,
+	OperationMode_OFB,
+	OperationMode_CCM,
+	OperationMode_GCM
+} EOperationMode;
 
 typedef enum
 {
@@ -39,12 +39,12 @@ typedef struct
 typedef struct
 {
 	UCHAR Key[16];
-	EChainingMode ChainingMode;
+	EOperationMode OperationMode;
 } Aes128CipherOptions;
 
 typedef struct
 {
 	UCHAR Key[32];
 	ESBlock SBlock;
-	EChainingMode ChainingMode;
+	EOperationMode OperationMode;
 } Gost89CipherOptions;

@@ -190,7 +190,7 @@ static NTSTATUS EvhdRegisterQosInterface(ParserInstance *parser)
 	if (!parser->bQosRegistered)
 	{
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REGISTER_QOS_INTERFACE, NULL, 0,
-			&parser->Qos, sizeof(QosInfo));
+			&parser->Qos, sizeof(PARSER_QOS_INFO));
 		parser->bQosRegistered = TRUE;
 	}
 
@@ -203,8 +203,8 @@ static NTSTATUS EvhdUnregisterQosInterface(ParserInstance *parser)
 
 	if (parser->bQosRegistered)
 	{
-		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_UNREGISTER_QOS_INTERFACE, &parser->Qos, sizeof(QosInfo),
-			&parser->Qos, sizeof(QosInfo));
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_UNREGISTER_QOS_INTERFACE, &parser->Qos, sizeof(PARSER_QOS_INFO),
+			&parser->Qos, sizeof(PARSER_QOS_INFO));
 		parser->bQosRegistered = FALSE;
 	}
 	return status;
@@ -296,7 +296,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 	typedef struct {
 		INT dwDiskSaveSize;
 		INT dwExtensionBufferSize;
-		IoInfo Io;
+		PARSER_IO_INFO Io;
 	} RegisterIoResponse;
 
 #pragma pack(pop)
@@ -327,7 +327,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 
 		parser->bIoRegistered = TRUE;
 		parser->dwDiskSaveSize = response.dwDiskSaveSize;
-		parser->dwInnerBufferSize = sizeof(ScsiPacketInnerRequest) + response.dwExtensionBufferSize;
+		parser->dwInnerBufferSize = sizeof(PARSER_STATE) + response.dwExtensionBufferSize;
 		parser->Io = response.Io;
 
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_SCSI_GET_ADDRESS, NULL, 0, &scsiAddressResponse, sizeof(SCSI_ADDRESS));
@@ -494,12 +494,11 @@ VOID EVhdCloseDisk(ParserInstance *parser)
 }
 
 /** Initiate virtual disk IO */
-NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags1, MountInfo *mountInfo)
+NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, PARSER_MOUNT_INFO *mountInfo)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	// WTF?
-	status = EvhdRegisterIo(parser, flags1 & 1 ? TRUE : FALSE, ((INT_PTR)mountInfo >> 1 & 1) ? TRUE : FALSE);
+	status = EvhdRegisterIo(parser, flags & 1, (flags >> 1) & 1);
 	if (!NT_SUCCESS(status))
 	{
 		DEBUG("VHD: EvhdRegisterIo failed with error 0x%0x\n", status);
@@ -643,11 +642,11 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 
 	if (EDiskInfo_Format == type)
 	{
-		ASSERT(0x38 == sizeof(DiskInfo_Format));
-		if (*pBufferSize < sizeof(DiskInfo_Format))
+		ASSERT(0x38 == sizeof(DISK_INFO_FORMAT));
+		if (*pBufferSize < sizeof(DISK_INFO_FORMAT))
 			return status = STATUS_BUFFER_TOO_SMALL;
-		DiskInfo_Format *pRes = (DiskInfo_Format *)pBuffer;
-		memset(pBuffer, 0, sizeof(DiskInfo_Format));
+		DISK_INFO_FORMAT *pRes = pBuffer;
+		memset(pBuffer, 0, sizeof(DISK_INFO_FORMAT));
 
 		Request = EDiskInfoType_Type;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
@@ -730,7 +729,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		}
 		pRes->DiskIdentifier = Response.guid;
 
-		*pBufferSize = sizeof(DiskInfo_Format);
+		*pBufferSize = sizeof(DISK_INFO_FORMAT);
 	}
 	else if (EDiskInfo_Fragmentation == type)
 	{
@@ -815,10 +814,10 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 	}
 	else if (EDiskInfo_Geometry == type)
 	{
-		ASSERT(0x10 == sizeof(DiskInfo_Geometry));
-		if (*pBufferSize < sizeof(DiskInfo_Geometry))
+		ASSERT(0x10 == sizeof(DISK_INFO_GEOMETRY));
+		if (*pBufferSize < sizeof(DISK_INFO_GEOMETRY))
 			return status = STATUS_BUFFER_TOO_SMALL;
-		DiskInfo_Geometry *pRes = (DiskInfo_Geometry *)pBuffer;
+		DISK_INFO_GEOMETRY *pRes = pBuffer;
 		Request = EDiskInfoType_Geometry;
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 			&Response, sizeof(DiskInfoResponse));
@@ -830,7 +829,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 		pRes->dwSectorSize = Response.vals[2].dwHigh;
 		pRes->qwDiskSize = Response.vals[0].qword;
 		pRes->dwNumSectors = parser->dwNumSectors;
-		*pBufferSize = sizeof(DiskInfo_Geometry);
+		*pBufferSize = sizeof(DISK_INFO_GEOMETRY);
 	}
 	else
 	{
@@ -851,12 +850,12 @@ NTSTATUS EVhdQuerySaveVersionDisk(ParserInstance *parser, INT *pVersion)
 /** Pause VM */
 NTSTATUS EVhdSaveDisk(ParserInstance *parser, PVOID data, ULONG32 size, ULONG32 *dataStored)
 {
-	ULONG32 dwSize = parser->dwDiskSaveSize + 0x20;
+	ULONG32 dwSize = parser->dwDiskSaveSize + sizeof(PARSER_STATE);
 	if (dwSize < parser->dwDiskSaveSize)
 		return STATUS_INTEGER_OVERFLOW;
 	if (dwSize > size)
 		return STATUS_BUFFER_TOO_SMALL;
-	parser->Io.pfnSaveData(parser->Io.pIoInterface, (UCHAR *)data + 0x20, parser->dwDiskSaveSize);
+	parser->Io.pfnSaveData(parser->Io.pIoInterface, (UCHAR *)data + sizeof(PARSER_STATE), parser->dwDiskSaveSize);
 	*dataStored = dwSize;
 	return STATUS_SUCCESS;
 }
@@ -866,7 +865,7 @@ NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG
 {
 	if (revision != 1)	 // Assigned by IOCTL_VIRTUAL_DISK_SET_SAVE_VERSION
 		return STATUS_REVISION_MISMATCH;
-	ULONG32 dwSize = parser->dwDiskSaveSize + 0x20;
+	ULONG32 dwSize = parser->dwDiskSaveSize + sizeof(PARSER_STATE);
 	if (dwSize < parser->dwDiskSaveSize)
 		return STATUS_INTEGER_OVERFLOW;
 	if (dwSize > size)

@@ -18,10 +18,6 @@ Caution
 --------------
 The purpose of this project is purely investigative (i.e. not meant to be used in production).
 
-Currently only this OS versions are supported:
-- Windows Server 2012 (only replaces original driver)
-- Windows Server 2012 R2 (replaces original driver and allows to encrypt on the fly specific virtual disks)
-
 Installation
 --------------
 1. Install this driver as a kernel mode service:

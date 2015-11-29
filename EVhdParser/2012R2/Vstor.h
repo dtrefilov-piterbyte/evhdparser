@@ -13,7 +13,7 @@ typedef struct
 	NTSTATUS (*pfnSetQosConfiguration)(void *, void *);
 	NTSTATUS (*pfnGetQosInformation)(void *, void *);
 	void *pQosInterface;
-} QosInfo;
+} PARSER_QOS_INFO;
 
 /* Forward declaration */
 struct _ScsiPacket;
@@ -28,19 +28,19 @@ typedef NTSTATUS(*CompleteScsiRequest_t)(struct _ScsiPacket *, NTSTATUS);
 typedef NTSTATUS(*SendNotification_t)(void *, INT);
 typedef NTSTATUS(*SendMediaNotification_t)(void *);
 
-typedef struct _IoInfo
+typedef struct _PARSER_IO_INFO
 {
 	void			*pIoInterface;
 	StartIo_t		pfnStartIo;
 	SaveData_t		pfnSaveData;
 	RestoreData_t	pfnRestoreData;
-} IoInfo;
+} PARSER_IO_INFO;
 
-typedef struct _MountInfo {
+typedef struct _PARSER_MOUNT_INFO {
 	INT				dwInnerBufferSize;
 	BOOLEAN			bUnk;
 	BOOLEAN			bFastPause;
-} MountInfo;
+} PARSER_MOUNT_INFO;
 
 typedef enum _EDiskInfoType {
 	EDiskInfo_Geometry				= 1,
@@ -50,7 +50,7 @@ typedef enum _EDiskInfoType {
 	EDiskInfo_PreloadDiskMetadata	= 0x104
 } EDiskInfoType;
 
-typedef struct _DiskInfo_Format {
+typedef struct _DISK_INFO_FORMAT {
 	INT				DiskType;		// 2 - Static, 3 - Dynamic, 4 - Differencing, etc...
 	EDiskFormat		DiskFormat;
 	INT				dwBlockSize;
@@ -61,13 +61,13 @@ typedef struct _DiskInfo_Format {
 	UCHAR			_align;
 	LONG64			qwDiskSize;
 	GUID			DiskIdentifier;	// Page 83 data
-} DiskInfo_Format;
+} DISK_INFO_FORMAT;
 
-typedef struct _DiskInfo_Size {
+typedef struct _DISK_INFO_GEOMETRY {
 	ULONG64			qwDiskSize;
 	INT				dwSectorSize;
 	INT				dwNumSectors;
-} DiskInfo_Geometry;
+} DISK_INFO_GEOMETRY;
 
 typedef struct _ScsiPacketRequest {
 	USHORT			wSize;					// 0x34
@@ -116,7 +116,7 @@ typedef struct _ScsiPacket {
 typedef NTSTATUS(*ParserOpenDisk_t)(PCUNICODE_STRING, ULONG32, GUID *, void *, struct _ParserInstance **);
 typedef VOID(*ParserCloseDisk_t)(struct _ParserInstance *);
 typedef NTSTATUS(*ParserCallback_t)(struct _ParserInstance *);
-typedef NTSTATUS(*ParserMountDisk_t)(struct _ParserInstance *, UCHAR, MountInfo *);
+typedef NTSTATUS(*ParserMountDisk_t)(struct _ParserInstance *, UCHAR, PARSER_MOUNT_INFO *);
 typedef NTSTATUS(*ParserDismountDisk_t)(struct _ParserInstance *);
 typedef NTSTATUS(*ParserQueryMountStatusDisk_t)(struct _ParserInstance *);
 typedef NTSTATUS(*ParserExecuteScsiRequestDisk_t)(struct _ParserInstance *, void *);

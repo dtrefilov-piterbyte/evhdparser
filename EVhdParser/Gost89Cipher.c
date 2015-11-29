@@ -79,12 +79,12 @@ NTSTATUS Gost89CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		return STATUS_INVALID_PARAMETER;
 	}
 
-	switch (gostConfig->ChainingMode)
+	switch (gostConfig->OperationMode)
 	{
-	case ChainingMode_CFB:
+	case OperationMode_CFB:
 		bIsCfb = TRUE;
 		break;
-	case ChainingMode_OFB:
+	case OperationMode_OFB:
 		bIsCfb = FALSE;
 		break;
 	default:
