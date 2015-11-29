@@ -31,10 +31,9 @@ typedef struct _ParserInstance {
 	EX_RUNDOWN_REF	RecoveryRundownProtection;
 	PIRP			pRecoveryStatusIrp;
 	RecoveryStatusCompletionRoutine	pfnRecoveryStatusCallback;
+	PVOID			pRecoveryStatusInterface;
 
 	USHORT			wMountFlags;
-
-	RecoveryStatusInfo	RecoveryStatusInfo;
 
 } ParserInstance;
 
@@ -52,10 +51,12 @@ NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG
 NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour, BOOLEAN *enableCache, INT param /* = 1 */);
 NTSTATUS EVhdSetQosPolicyDisk(ParserInstance *parser, PVOID pInputBuffer, ULONG32 dwSize);
 NTSTATUS EVhdGetQosStatusDisk(ParserInstance *parser, PVOID pSystemBuffer, ULONG32 dwSize, QoSStatusCompletionRoutine pfnCompletionCb, PVOID pInterface);
+NTSTATUS EVhdChangeTrackingSetParameters(ParserInstance *parser);
 NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *pParams);
 NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTStartParam *pParams);
 NTSTATUS EVhdChangeTrackingStop(ParserInstance *parser, const ULONG32 *pInput, ULONG32 *pOutput);
 NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *pParams, ULONG32 *pOutput);
+NTSTATUS EVhdEnableResiliency(ParserInstance *parser);
 NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface);
 NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus);
 NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);

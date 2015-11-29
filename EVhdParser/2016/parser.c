@@ -55,7 +55,8 @@ static NTSTATUS EvhdQueryBoolParameter(LPCWSTR lpszParameterName, BOOLEAN bDefau
 	return status;
 }
 
-static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, PVOID pInputBuffer, ULONG InputBufferSize)
+static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, PVOID pSystemBuffer, ULONG InputBufferSize,
+	ULONG OutputBufferSize)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_OBJECT pDeviceObject = NULL;
@@ -65,35 +66,9 @@ static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, P
 	IoReuseIrp(parser->pDirectIoIrp, STATUS_PENDING);
 	parser->pDirectIoIrp->Flags |= IRP_NOCACHE;
 	parser->pDirectIoIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);		// Pointer to calling thread control block
-	parser->pDirectIoIrp->AssociatedIrp.SystemBuffer = pInputBuffer;				// IO buffer for buffered control code
+	parser->pDirectIoIrp->AssociatedIrp.SystemBuffer = pSystemBuffer;				// IO buffer for buffered control code
 	// fill stack frame parameters for synchronous IRP call
 	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pDirectIoIrp);
-	pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
-	pStackFrame->FileObject = parser->pVhdmpFileObject;
-	pStackFrame->DeviceObject = pDeviceObject;
-	pStackFrame->Parameters.DeviceIoControl.IoControlCode = ControlCode;
-	pStackFrame->Parameters.DeviceIoControl.InputBufferLength = InputBufferSize;
-	pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = 0;
-	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
-	pStackFrame->MinorFunction = 0;
-	pStackFrame->Flags = 0;
-	pStackFrame->Control = 0;
-	IoSynchronousCallDriver(pDeviceObject, parser->pDirectIoIrp);
-	status = parser->pDirectIoIrp->IoStatus.Status;
-	FltReleasePushLock(&parser->DirectIoPushLock);
-	KeLeaveCriticalRegion();
-	return status;
-}
-
-static NTSTATUS EvhdQosStatusControl(ParserInstance *parser, ULONG ControlCode, ULONG InputBufferSize, ULONG OutputBufferSize,
-	PIO_COMPLETION_ROUTINE pfnCompletionRoutine)
-{
-	PDEVICE_OBJECT pDeviceObject = NULL;
-
-	IoReuseIrp(parser->pQoSStatusIrp, STATUS_PENDING);
-	parser->pQoSStatusIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
-	parser->pQoSStatusIrp->AssociatedIrp.SystemBuffer = parser->pQoSStatusBuffer;				// IO buffer for buffered control code
-	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pQoSStatusIrp);
 	pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
 	pStackFrame->FileObject = parser->pVhdmpFileObject;
 	pStackFrame->DeviceObject = pDeviceObject;
@@ -103,11 +78,12 @@ static NTSTATUS EvhdQosStatusControl(ParserInstance *parser, ULONG ControlCode, 
 	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
 	pStackFrame->MinorFunction = 0;
 	pStackFrame->Flags = 0;
-	pStackFrame->Control = SL_INVOKE_ON_CANCEL | SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
-	pStackFrame->Context = parser;
-	pStackFrame->CompletionRoutine = pfnCompletionRoutine;
-	IoCallDriver(pDeviceObject, parser->pQoSStatusIrp);
-	return STATUS_PENDING;
+	pStackFrame->Control = 0;
+	IoSynchronousCallDriver(pDeviceObject, parser->pDirectIoIrp);
+	status = parser->pDirectIoIrp->IoStatus.Status;
+	FltReleasePushLock(&parser->DirectIoPushLock);
+	KeLeaveCriticalRegion();
+	return status;
 }
 
 static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
@@ -298,7 +274,7 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 		} RemoveVhdRequest = { 1 };
 #pragma pack(pop)
 
-		EvhdDirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest));
+		EvhdDirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest), 0);
 
 		parser->bIoRegistered = FALSE;
 		parser->Io.pIoInterface = NULL;
@@ -777,10 +753,29 @@ static NTSTATUS EvhdGetQosStatusCompletionRoutine(PDEVICE_OBJECT DeviceObject, P
 
 NTSTATUS EVhdGetQosStatusDisk(ParserInstance *parser, PVOID pSystemBuffer, ULONG32 dwSize, QoSStatusCompletionRoutine pfnCompletionCb, PVOID pInterface)
 {
+	PDEVICE_OBJECT pDeviceObject = NULL;
 	parser->pQoSStatusInterface = pInterface;
 	parser->pfnQoSStatusCallback = pfnCompletionCb;
 	memmove(parser->pQoSStatusBuffer, pSystemBuffer, dwSize);
-	return EvhdQosStatusControl(parser, IOCTL_STORAGE_VHD_GET_QOS_STATUS, dwSize, 0x58, EvhdGetQosStatusCompletionRoutine);
+
+	IoReuseIrp(parser->pQoSStatusIrp, STATUS_PENDING);
+	parser->pQoSStatusIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
+	parser->pQoSStatusIrp->AssociatedIrp.SystemBuffer = parser->pQoSStatusBuffer;				// IO buffer for buffered control code
+	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pQoSStatusIrp);
+	pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
+	pStackFrame->FileObject = parser->pVhdmpFileObject;
+	pStackFrame->DeviceObject = pDeviceObject;
+	pStackFrame->Parameters.DeviceIoControl.IoControlCode = IOCTL_STORAGE_VHD_GET_QOS_STATUS;
+	pStackFrame->Parameters.DeviceIoControl.InputBufferLength = dwSize;
+	pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = 0x58;
+	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+	pStackFrame->MinorFunction = 0;
+	pStackFrame->Flags = 0;
+	pStackFrame->Control = SL_INVOKE_ON_CANCEL | SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
+	pStackFrame->Context = parser;
+	pStackFrame->CompletionRoutine = EvhdGetQosStatusCompletionRoutine;
+	IoCallDriver(pDeviceObject, parser->pQoSStatusIrp);
+	return STATUS_PENDING;
 }
 
 NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *pParams)
@@ -794,6 +789,12 @@ NTSTATUS EVhdChangeTrackingGetParameters(ParserInstance *parser, CTParameters *p
 		pParams->qwUncommitedSize = Response.qwUncommitedSize;
 	}
 	return status;
+}
+
+NTSTATUS EVhdChangeTrackingSetParameters(ParserInstance *parser)
+{
+	UNREFERENCED_PARAMETER(parser);
+	return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS EVhdChangeTrackingStart(ParserInstance *parser, CTStartParam *pParam)
@@ -883,19 +884,71 @@ NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *
 	return status;
 }
 
+NTSTATUS EVhdEnableResiliency(ParserInstance *parser)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	if (!parser->bResiliencyEnabled)
+	{
+		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_ENABLE_RESILIENCY, NULL, 0, NULL, 0);
+		if (NT_SUCCESS(status))
+			parser->bResiliencyEnabled = TRUE;
+	}
+	return status;
+}
+
+static NTSTATUS EvhdRecoveryStatusCompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp, PVOID pContext)
+{
+	UNREFERENCED_PARAMETER(DeviceObject);
+	ParserInstance *parser = (ParserInstance *)pContext;
+	parser->pfnRecoveryStatusCallback(parser->pRecoveryStatusInterface, pIrp->IoStatus.Status);
+	return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
 NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pfnCompletionCb);
-	UNREFERENCED_PARAMETER(pInterface);
-	return STATUS_NOT_SUPPORTED;
+	PDEVICE_OBJECT pDeviceObject = NULL;
+	if (parser->bResiliencyEnabled)
+	{
+		if (!ExAcquireRundownProtection(&parser->RecoveryRundownProtection))
+			return STATUS_UNSUCCESSFUL;
+
+		parser->pfnRecoveryStatusCallback = pfnCompletionCb;
+		parser->pRecoveryStatusInterface = pInterface;
+
+		IoReuseIrp(parser->pRecoveryStatusIrp, STATUS_PENDING);
+		parser->pRecoveryStatusIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
+		PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(parser->pRecoveryStatusIrp);
+		pDeviceObject = IoGetRelatedDeviceObject(parser->pVhdmpFileObject);
+		pStackFrame->FileObject = parser->pVhdmpFileObject;
+		pStackFrame->DeviceObject = pDeviceObject;
+		pStackFrame->Parameters.DeviceIoControl.IoControlCode = IOCTL_STORAGE_VHD_NOTIFY_RECOVERY_STATUS;
+		pStackFrame->Parameters.DeviceIoControl.InputBufferLength = 0;
+		pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = 0;
+		pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+		pStackFrame->MinorFunction = 0;
+		pStackFrame->Flags = 0;
+		pStackFrame->Control = SL_INVOKE_ON_CANCEL | SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
+		pStackFrame->Context = parser;
+		pStackFrame->CompletionRoutine = EvhdRecoveryStatusCompletionRoutine;
+		IoCallDriver(pDeviceObject, parser->pRecoveryStatusIrp);
+		return STATUS_PENDING;
+	}
+	else
+		return STATUS_UNSUCCESSFUL;
 }
 
 NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pStatus);
-	return STATUS_NOT_SUPPORTED;
+	if (parser->bResiliencyEnabled)
+	{
+		ULONG32 Response;
+		NTSTATUS status = EvhdDirectIoControl(parser, IOCTL_STORAGE_VHD_GET_RECOVERY_STATUS, &Response, 0, sizeof(Response));
+		if (NT_SUCCESS(status))
+			*pStatus = Response;
+		return status;
+	}
+	else
+		return STATUS_UNSUCCESSFUL;
 }
 
 NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation)

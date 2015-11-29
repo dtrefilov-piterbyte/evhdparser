@@ -34,7 +34,7 @@ typedef struct {
 } CTSwitchLogParam;
 
 typedef NTSTATUS(*QoSStatusCompletionRoutine)(NTSTATUS, void *, void *);
-typedef NTSTATUS(*RecoveryStatusCompletionRoutine)(void *, ULONG32);
+typedef NTSTATUS(*RecoveryStatusCompletionRoutine)(void *, NTSTATUS);
 typedef NTSTATUS(*MetaOperationCompletionRoutine)(void *);
 
 typedef enum {
@@ -75,14 +75,6 @@ typedef struct _MountInfo {
 	BOOLEAN			bFastPause;
 	BOOLEAN			bFastClose;
 } MountInfo;
-
-typedef struct _RecoveryStatusInfo
-{
-	PIRP							pIrp;
-	RecoveryStatusCompletionRoutine	pfnRecoveryStatusCallback;
-	PVOID							pRecoverySubscriberInterface;
-} RecoveryStatusInfo;
-
 
 typedef NTSTATUS(*CompleteScsiRequest_t)(struct _ScsiPacket *, NTSTATUS);
 typedef NTSTATUS(*SendNotification_t)(void *, INT);
