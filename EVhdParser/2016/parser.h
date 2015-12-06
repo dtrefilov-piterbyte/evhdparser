@@ -59,10 +59,10 @@ NTSTATUS EVhdChangeTrackingSwitchLogs(ParserInstance *parser, CTSwitchLogParam *
 NTSTATUS EVhdEnableResiliency(ParserInstance *parser);
 NTSTATUS EVhdNotifyRecoveryStatus(ParserInstance *parser, RecoveryStatusCompletionRoutine pfnCompletionCb, void *pInterface);
 NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus);
-NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);
+NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, MetaOperationBuffer *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation);
 NTSTATUS EVhdStartMetaOperation(MetaOperation *operation);
 NTSTATUS EVhdCancelMetaOperation(MetaOperation *operation);
-NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *operation);
+NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *operation, PVOID pProgress);
 NTSTATUS EVhdCleanupMetaOperation(MetaOperation *operation);
-NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer /* TODO:sizeof=0x18 */);
-NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pInputBuffer, ULONG32 dwInputBufferLength);
+NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer);
+NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pSystemBuffer, ULONG32 dwInputBufferLength, ULONG32 dwOutputBufferLength);

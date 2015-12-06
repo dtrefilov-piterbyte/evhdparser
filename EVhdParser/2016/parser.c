@@ -5,6 +5,7 @@
 
 static const ULONG EvhdPoolTag = 'VVpp';
 static const ULONG EvhdQoSPoolTag = 'VVpc';
+static const ULONG EvhdMetaOperationPoolTag = 'VVpm';
 
 static const SIZE_T QoSBufferSize = 0x470;
 
@@ -951,51 +952,192 @@ NTSTATUS EVhdGetRecoveryStatus(ParserInstance *parser, ULONG32 *pStatus)
 		return STATUS_UNSUCCESSFUL;
 }
 
-NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, void *pMetaOperationBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation)
+NTSTATUS EVhdPrepareMetaOperation(ParserInstance *parser, MetaOperationBuffer *pBuffer, MetaOperationCompletionRoutine pfnCompletionCb, void *pInterface, MetaOperation **ppOperation)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pMetaOperationBuffer);
-	UNREFERENCED_PARAMETER(pfnCompletionCb);
-	UNREFERENCED_PARAMETER(pInterface);
-	UNREFERENCED_PARAMETER(ppOperation);
+	MetaOperation *pOperation = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(MetaOperation), EvhdPoolTag);
+	if (!pOperation)
+		return STATUS_INSUFFICIENT_RESOURCES;
+	pOperation->pfnCompletionRoutine = pfnCompletionCb;
+	pOperation->pParser = parser;
+	pOperation->pInterface = pInterface;
+	pOperation->pIrp = IoAllocateIrp(IoGetRelatedDeviceObject(parser->pVhdmpFileObject)->StackSize, FALSE);
+	pOperation->pBuffer = pBuffer;
+	if (!pOperation->pIrp)
+	{
+		EVhdCleanupMetaOperation(pOperation);
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+	*ppOperation = pOperation;
+	return STATUS_SUCCESS;
+}
+
+static NTSTATUS EvhdMetaOperationCompletionRoutine(PDEVICE_OBJECT DeviceObject, PIRP pIrp, PVOID pContext)
+{
+	UNREFERENCED_PARAMETER(DeviceObject);
+	MetaOperation *pOperation = (MetaOperation *)pContext;
+	pOperation->pBuffer->Status = pIrp->IoStatus;
+	pOperation->pfnCompletionRoutine(pOperation->pInterface);
+	return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+static NTSTATUS EvhdStartMetaOperation(MetaOperation *pOperation, ULONG ControlCode, PVOID pBuffer, ULONG BufferSize)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	PDEVICE_OBJECT pDeviceObject = NULL;
+	PIRP pIrp = pOperation->pIrp;
+	pIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
+	PIO_STACK_LOCATION pStackFrame = IoGetNextIrpStackLocation(pIrp);
+	pDeviceObject = IoGetRelatedDeviceObject(pOperation->pParser->pVhdmpFileObject);
+	pStackFrame->FileObject = pOperation->pParser->pVhdmpFileObject;
+	pStackFrame->DeviceObject = pDeviceObject;
+	pStackFrame->Parameters.DeviceIoControl.IoControlCode = ControlCode;
+	pStackFrame->Parameters.DeviceIoControl.InputBufferLength = BufferSize;
+	pStackFrame->Parameters.DeviceIoControl.OutputBufferLength = 0;
+	pStackFrame->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+	pStackFrame->MinorFunction = 0;
+	pStackFrame->Flags = 0;
+
+	if (BufferSize)
+	{
+		pIrp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPoolNxCacheAligned, BufferSize, EvhdPoolTag);
+		if (!pIrp->AssociatedIrp.SystemBuffer)
+			return STATUS_INSUFFICIENT_RESOURCES;
+		if (pBuffer)
+			memmove(pIrp->AssociatedIrp.SystemBuffer, pBuffer, BufferSize);
+		pIrp->Flags = IRP_BUFFERED_IO;
+	}
+	else
+		pIrp->Flags = 0;
+	pIrp->UserBuffer = NULL;
+	pIrp->UserEvent = NULL;
+	pIrp->UserIosb = &pOperation->pBuffer->Status;
+	pIrp->RequestorMode = KernelMode;
+	pStackFrame->Control = SL_INVOKE_ON_CANCEL | SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
+	pStackFrame->Context = pOperation;
+	pStackFrame->CompletionRoutine = EvhdMetaOperationCompletionRoutine;
+	IoCallDriver(pDeviceObject, pIrp);
+	return STATUS_PENDING;
+}
+
+typedef struct {
+	UCHAR _unk[32];
+	ULONG dwSize;
+	ULONG dwInnerSize;
+} VhdSetExtractInnerRequest;
+
+typedef struct {
+	USHORT wOperation;
+	USHORT _align;
+	ULONG dwUnk;
+	VhdSetExtractInnerRequest Inner;
+} VhdSetExtractRequest;
+
+static NTSTATUS EvhdSetExtract(MetaOperation *pOperation, VhdSetExtractRequest *pRequest)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	VhdSetExtractInnerRequest *pBuffer = NULL;
+	ULONG BufferSize = (ULONG)((ULONG64)pRequest->Inner.dwInnerSize + sizeof(VhdSetExtractInnerRequest));
+	if (BufferSize < pRequest->Inner.dwInnerSize)
+		return STATUS_INTEGER_OVERFLOW;
+	pBuffer = (VhdSetExtractInnerRequest *)ExAllocatePoolWithTag(NonPagedPoolNx, BufferSize, EvhdMetaOperationPoolTag);
+	memmove(pBuffer, &pRequest->Inner, sizeof(VhdSetExtractInnerRequest));
+	memmove((PUCHAR)pBuffer + sizeof(VhdSetExtractInnerRequest),
+		(PUCHAR)pRequest + pRequest->Inner.dwSize, pRequest->Inner.dwInnerSize);
+
+	Status = EvhdStartMetaOperation(pOperation, IOCTL_STORAGE_VHD_SET_EXTRACT, (PUCHAR)pOperation->pBuffer + sizeof(MetaOperationBuffer), 0x10);
+	ExFreePoolWithTag(pBuffer, EvhdMetaOperationPoolTag);
+	return Status;
+}
+
+// TODO: sort this out
+typedef struct {
+	USHORT wOperation;
+	USHORT _align;
+	ULONG dwUnk;
+	ULONG CTState;
+	ULONG CTState2;
+	ULONG CTState3;
+	ULONG CTState4;
+	ULONG64 qwUnk;
+	GUID guidUnk;
+	ULONG dwUnk2;
+	GUID OfflineCdpAppId;
+	ULONG dwUnk3;
+	ULONG FeatureFlags;
+	GUID CdpSnapshotId;
+} VhdSetSnapshotRequest;
+
+static NTSTATUS EvhdSetSnapshot(MetaOperation *pOperation, VhdSetSnapshotRequest *pRequest)
+{
+	// TODO:
 	return STATUS_NOT_SUPPORTED;
 }
 
 NTSTATUS EVhdStartMetaOperation(MetaOperation *pOperation)
 {
-	UNREFERENCED_PARAMETER(pOperation);
-	return STATUS_NOT_SUPPORTED;
+	PVOID pRequest = (PUCHAR)pOperation->pBuffer + sizeof(MetaOperationBuffer);
+	switch (pOperation->pBuffer->Type)
+	{
+	case EMetaOperation_Snapshot:
+		return EvhdSetSnapshot(pOperation, (VhdSetSnapshotRequest *)pRequest);
+	case EMetaOperation_Resize:
+		return EvhdStartMetaOperation(pOperation, IOCTL_STORAGE_VHD_RESIZE, pRequest, 0x10);
+	case EMetaOperation_Optimize:
+		return EvhdStartMetaOperation(pOperation, IOCTL_STORAGE_VHD_SET_OPTIMIZE, NULL, 0);
+	case EMetaOperation_Extract:
+		if (((VhdSetExtractRequest *)pRequest)->wOperation != 1 ||
+			((VhdSetExtractRequest *)pRequest)->dwUnk != 0)
+			return EvhdSetExtract(pOperation, (VhdSetExtractRequest *)pRequest);
+	default:
+		return STATUS_NOT_SUPPORTED;
+	}
 }
 
 NTSTATUS EVhdCancelMetaOperation(MetaOperation *pOperation)
 {
-	UNREFERENCED_PARAMETER(pOperation);
-	return STATUS_NOT_SUPPORTED;
+	if (pOperation->pIrp)
+		IoCancelIrp(pOperation->pIrp);
+
+	// TODO: actually returns nothing
+	return STATUS_SUCCESS;
 }
 
-NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *pOperation)
+NTSTATUS EVhdQueryMetaOperationProgress(MetaOperation *pOperation, PVOID pProgress)
 {
-	UNREFERENCED_PARAMETER(pOperation);
-	return STATUS_NOT_SUPPORTED;
+	ULONG64 Request = (ULONG64)&pOperation->pBuffer->Status;	// Dirty hack?
+	struct Response {
+		ULONG64 qwUnk1;
+		ULONG64 qwUnk2;
+	};
+	struct Response Response;
+	NTSTATUS Status = SynchronouseCall(pOperation->pParser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_ASYNC_OPERATION_PROGRESS,
+		&Request, sizeof(Request), &Response, sizeof(Response));
+	if (NT_SUCCESS(Status))
+		*((struct Response *)pProgress) = Response;
+	return Status;
 }
 
 NTSTATUS EVhdCleanupMetaOperation(MetaOperation *pOperation)
 {
-	UNREFERENCED_PARAMETER(pOperation);
-	return STATUS_NOT_SUPPORTED;
+	if (pOperation->pIrp)
+	{
+		// O RLY?
+		if (pOperation->pBuffer)
+			ExFreePoolWithTag(pOperation->pBuffer, EvhdPoolTag);
+		IoFreeIrp(pOperation->pIrp);
+	}
+	ExFreePoolWithTag(pOperation, EvhdPoolTag);
 }
 
-NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer /* TODO:sizeof=0x18 */)
+NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pInputBuffer);
-	return STATUS_NOT_SUPPORTED;
+	return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_SET_DELETE_SNAPSHOT, pInputBuffer, 0x18,
+		NULL, 0);
 }
 
-NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pInputBuffer, ULONG32 dwInputBufferLength)
+NTSTATUS EVhdParserQueryChanges(ParserInstance *parser, void *pSystemBuffer, ULONG32 dwInputBufferLength, ULONG32 dwOutputBufferLength)
 {
-	UNREFERENCED_PARAMETER(parser);
-	UNREFERENCED_PARAMETER(pInputBuffer);
-	UNREFERENCED_PARAMETER(dwInputBufferLength);
-	return STATUS_NOT_SUPPORTED;
+	// TODO: 5th arg - BytesTransferred
+	return SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_SET_DELETE_SNAPSHOT, pSystemBuffer, dwInputBufferLength,
+		pSystemBuffer, dwOutputBufferLength);
 }

@@ -40,15 +40,24 @@ typedef NTSTATUS(*MetaOperationCompletionRoutine)(void *);
 typedef enum {
 	EMetaOperation_Snapshot,
 	EMetaOperation_Resize,
-	EMetaOperation_Complete,
+	EMetaOperation_Optimize,
 	EMetaOperation_Extract
 } EMetaOperation;
 
 typedef struct {
+	EMetaOperation	Type;
+	ULONG			dwUnk;
+	IO_STATUS_BLOCK	Status;
+	UCHAR			Reserved[16];
+
+	// User defined request
+} MetaOperationBuffer;
+
+typedef struct {
 	struct _ParserInstance *pParser;
 	MetaOperationCompletionRoutine pfnCompletionRoutine;
-	void *pCompletionInterface;
-	void *SystemBuffer;
+	void *pInterface;
+	MetaOperationBuffer *pBuffer;
 	PIRP pIrp;
 } MetaOperation;
 
@@ -190,7 +199,7 @@ typedef NTSTATUS(*ParserChangeTrackingStop_t)(struct _ParserInstance *, const UL
 typedef NTSTATUS(*ParserChangeTrackingSwitchLogs_t)(struct _ParserInstance *, CTSwitchLogParam *);
 typedef NTSTATUS(*ParserNotifyRecoveryStatus_t)(struct _ParserInstance *, RecoveryStatusCompletionRoutine, void *);
 typedef NTSTATUS(*ParserGetRecoveryStatus_t)(struct _ParserInstance *, ULONG32 *);
-typedef NTSTATUS(*ParserPrepareMetaOperation_t)(struct _ParserInstance *, void *, MetaOperationCompletionRoutine, void *, MetaOperation **);
+typedef NTSTATUS(*ParserPrepareMetaOperation_t)(struct _ParserInstance *, MetaOperationBuffer *, MetaOperationCompletionRoutine, void *, MetaOperation **);
 typedef NTSTATUS(*MetaOperationCallback_t)(MetaOperation *);
 typedef NTSTATUS(*ParserDeleteSnapshot_t)(struct _ParserInstance *, void *);
 typedef NTSTATUS(*ParserQueryChanges_t)(struct _ParserInstance *, void *, ULONG32);
