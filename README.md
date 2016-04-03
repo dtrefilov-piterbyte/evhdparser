@@ -3,15 +3,15 @@ EVhdParser
 This is a reverse engeneered Microsoft Vhdparser driver, which is originally used as a shim
 between storvsp (Storage Virtualization Service Provider) and vhdmp (VHD miniport driver).
 This shim enables us to write own filter drivers for virtual storages in Hyper-V
-(i.e. encrypting drivers).
+(e.g. encrypting drivers, replication filters, changed blocked loggers etc.).
 
-Hyper-V clients (VMs) communicate with storvsp using SCSI protocol, this driver is
+Storage service consumers (VMs) communicate with storvsp using SCSI protocol, this driver is
 used to filter I/O requests and pass it to the backing store. The whole architecture is
-briefly overviewed at
+briefly explained in presentation:
 http://download.microsoft.com/download/5/b/9/5b97017b-e28a-4bae-ba48-174cf47d23cd/vir049_wh06.ppt
 
 It seems that Microsoft had planned to implement an expandability of virtual storage services
-(as VMware does with VAIO SDK) and to enable third-party SAN developers to write their own
+(as VMware does with VAIO SDK) and to enable third-party virtualization storage developers to write their own
 enlightened I/O parser for their solutions. But unfortunatelly StorVSP API has not become public.
 
 Caution
