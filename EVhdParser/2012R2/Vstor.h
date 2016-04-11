@@ -16,15 +16,14 @@ typedef struct
 } PARSER_QOS_INFO;
 
 /* Forward declaration */
-struct _ScsiPacket;
-struct _ScsiPacketRequest;
-struct _ScsiPacketInnerRequest;
+struct _SCSI_REQUEST;
+struct _STORVSP_REQUEST;
 
-typedef NTSTATUS (*StartIo_t)(PVOID, struct _ScsiPacket *, struct _ScsiPacketInnerRequest *, PMDL, BOOLEAN, PVOID);
+typedef NTSTATUS(*StartIo_t)(PVOID, struct _SCSI_REQUEST *, struct _STORVSP_REQUEST *, PMDL, BOOLEAN, PVOID);
 typedef NTSTATUS (*SaveData_t)(PVOID, PVOID, ULONG32);
 typedef NTSTATUS (*RestoreData_t)(PVOID, PVOID, ULONG32);
 
-typedef NTSTATUS(*CompleteScsiRequest_t)(struct _ScsiPacket *, NTSTATUS);
+typedef NTSTATUS(*CompleteScsiRequest_t)(struct _SCSI_REQUEST *, NTSTATUS);
 typedef NTSTATUS(*SendNotification_t)(void *, INT);
 typedef NTSTATUS(*SendMediaNotification_t)(void *);
 
@@ -69,7 +68,13 @@ typedef struct _DISK_INFO_GEOMETRY {
 	INT				dwNumSectors;
 } DISK_INFO_GEOMETRY;
 
-typedef struct _ScsiPacketRequest {
+enum STORVCS_REQUEST_TYPE {
+    WRITE_TYPE,
+    READ_TYPE,
+    UNKNOWN_TYPE,
+};
+
+typedef struct _STORVSC_REQUEST {
 	USHORT			wSize;					// 0x34
 	UCHAR			SrbStatus;
 	UCHAR			ScsiStatus;
@@ -79,7 +84,7 @@ typedef struct _ScsiPacketRequest {
 	UCHAR			ScsiLun;
 	UCHAR			CdbLength;				// 0x14
 	UCHAR			SenseInfoBufferLength;	// 0x10
-	UCHAR			bDataIn;				// 1 - read, 0 - write
+	UCHAR			bType;				// STORVCS_REQUEST_TYPE
 	UCHAR			bFlags;
 	ULONG32			DataTransferLength;
 	union {
@@ -92,16 +97,16 @@ typedef struct _ScsiPacketRequest {
 	ULONG32			SrbFlags;
 	ULONG32			f_2C;
 	ULONG32			f_30;
-} ScsiPacketRequest;
+} STORVSC_REQUEST;
 
-typedef struct _ScsiPacketInnerRequest {
+typedef struct _STORVSP_REQUEST {
 	SCSI_REQUEST_BLOCK		Srb;
-	struct _ParserInstance	*pParser;
-} ScsiPacketInnerRequest;
+	PVOID                   pContext;
+} STORVSP_REQUEST;
 
-typedef struct _ScsiPacket {
-	ScsiPacketInnerRequest	*pInner;
-	ScsiPacketRequest		*pRequest;		// Input buffer for IOCTL_VIRTUAL_DISK_SCSI_REQUEST
+typedef struct _SCSI_REQUEST {
+    STORVSP_REQUEST     	*pVspRequest;
+    STORVSC_REQUEST 		*pVscRequest;		// Input buffer for IOCTL_VIRTUAL_DISK_SCSI_REQUEST
 	PMDL					pMdl;
 	union {
 		SCSI_CDB_6	Cdb6;
@@ -111,22 +116,22 @@ typedef struct _ScsiPacket {
 	}						Sense;
 	BOOLEAN					bUseInternalSenseBuffer;
 	BOOLEAN					bUnkFlag;
-} ScsiPacket;
+} SCSI_REQUEST;
 
-typedef NTSTATUS(*ParserOpenDisk_t)(PCUNICODE_STRING, ULONG32, GUID *, void *, struct _ParserInstance **);
-typedef VOID(*ParserCloseDisk_t)(struct _ParserInstance *);
-typedef NTSTATUS(*ParserCallback_t)(struct _ParserInstance *);
-typedef NTSTATUS(*ParserMountDisk_t)(struct _ParserInstance *, UCHAR, PARSER_MOUNT_INFO *);
-typedef NTSTATUS(*ParserDismountDisk_t)(struct _ParserInstance *);
-typedef NTSTATUS(*ParserQueryMountStatusDisk_t)(struct _ParserInstance *);
-typedef NTSTATUS(*ParserExecuteScsiRequestDisk_t)(struct _ParserInstance *, void *);
-typedef NTSTATUS(*ParserQueryInformationDisk_t)(struct _ParserInstance *, EDiskInfoType, INT, INT, PVOID, INT *);
-typedef NTSTATUS(*ParserQuerySaveVersionDisk_t)(struct _ParserInstance *, INT *);
-typedef NTSTATUS(*ParserSaveDisk_t)(struct _ParserInstance *, PVOID, ULONG32, ULONG32 *);
-typedef NTSTATUS(*ParserRestoreDisk_t)(struct _ParserInstance *, INT, PVOID, ULONG32);
-typedef NTSTATUS(*ParserSetBehaviourDisk_t)(struct _ParserInstance *, INT);
-typedef NTSTATUS(*ParserSetQosConfigurationDisk_t)(struct _ParserInstance *, void *);
-typedef NTSTATUS(*ParserGetQosInformationDisk_t)(struct _ParserInstance *, void *);
+typedef NTSTATUS(*ParserOpenDisk_t)(PCUNICODE_STRING, ULONG32, GUID *, PVOID, PVOID *);
+typedef VOID(*ParserCloseDisk_t)(PVOID);
+typedef NTSTATUS(*ParserCallback_t)(PVOID);
+typedef NTSTATUS(*ParserMountDisk_t)(PVOID, UCHAR, PARSER_MOUNT_INFO *);
+typedef NTSTATUS(*ParserDismountDisk_t)(PVOID);
+typedef NTSTATUS(*ParserQueryMountStatusDisk_t)(PVOID);
+typedef NTSTATUS(*ParserExecuteScsiRequestDisk_t)(PVOID, PVOID);
+typedef NTSTATUS(*ParserQueryInformationDisk_t)(PVOID, EDiskInfoType, INT, INT, PVOID, INT *);
+typedef NTSTATUS(*ParserQuerySaveVersionDisk_t)(PVOID, INT *);
+typedef NTSTATUS(*ParserSaveDisk_t)(PVOID, PVOID, ULONG32, ULONG32 *);
+typedef NTSTATUS(*ParserRestoreDisk_t)(PVOID, INT, PVOID, ULONG32);
+typedef NTSTATUS(*ParserSetBehaviourDisk_t)(PVOID, INT);
+typedef NTSTATUS(*ParserSetQosConfigurationDisk_t)(PVOID, PVOID);
+typedef NTSTATUS(*ParserGetQosInformationDisk_t)(PVOID, PVOID);
 
 typedef struct {
 	ULONG32							dwSize;
@@ -154,6 +159,6 @@ typedef struct {
 #pragma pack(pop)
 
 NTSTATUS VstorRegisterParser(VstorParserInfo *);
-NTSTATUS VstorCompleteScsiRequest(ScsiPacket *);
+NTSTATUS VstorCompleteScsiRequest(struct _SCSI_REQUEST *);
 NTSTATUS VstorSendNotification(void *, INT);
 NTSTATUS VstorSendMediaNotification(void *);

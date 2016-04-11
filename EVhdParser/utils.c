@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "utils.h"	
 
 NTSTATUS SynchronouseCall(PFILE_OBJECT pFileObject, ULONG ulControlCode, PVOID InputBuffer,

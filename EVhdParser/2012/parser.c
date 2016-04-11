@@ -1,9 +1,12 @@
+#include "stdafx.h"
+#include "Log.h"
 #include "parser.h"
-#include <initguid.h>
 #include "Guids.h"
 #include "Ioctl.h"
 #include "Vdrvroot.h"	 
 #include "utils.h"
+
+#define LOG_PARSER(level, format, ...) LOG_FUNCTION(level, LOG_CTG_PARSER, format, __VA_ARGS__)
 
 static const ULONG EvhdPoolTag = 0x70705656;	// 'VVpp'
 
@@ -23,7 +26,7 @@ static NTSTATUS EvhdInitialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, H
 
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("SynchronouseCall IOCTL_STORAGE_VHD_GET_INFORMATION failed with error 0x%0x\n", status);
+        LOG_PARSER(LL_FATAL, "SynchronouseCall IOCTL_STORAGE_VHD_GET_INFORMATION failed with error 0x%0x\n", status);
 	}
 	else
 	{
@@ -170,7 +173,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN bFlag)
 	status = EvhdRegisterQoS(parser);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("EvhdRegisterQoS failed with error 0x%08X\n", status);
+		LOG_PARSER(LL_FATAL, "EvhdRegisterQoS failed with error 0x%08X\n", status);
 		return status;
 	}
 
@@ -183,7 +186,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN bFlag)
 
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_STORAGE_REGISTER_IO failed with error 0x%08X\n", status);
+            LOG_PARSER(LL_FATAL, "IOCTL_STORAGE_REGISTER_IO failed with error 0x % 08X\n", status);
 			return status;
 		}
 		parser->bIoRegistered = TRUE;
@@ -193,7 +196,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN bFlag)
 
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
+        LOG_PARSER(LL_FATAL, "IOCTL_SCSI_GET_ADDRESS failed with error 0x % 0X\n", status);
 		return status;
 	}
 
@@ -220,7 +223,7 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest), NULL, 0);
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_STORAGE_REMOVE_VIRTUAL_DISK failed with error 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "IOCTL_STORAGE_REMOVE_VIRTUAL_DISK failed with error 0x%0X\n", status);
 			return status;
 		}
 		parser->bIoRegistered = FALSE;
@@ -320,14 +323,14 @@ NTSTATUS EVhdInit(SrbCallbackInfo *callbackInfo, PCUNICODE_STRING diskPath, ULON
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pResiliency);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
+        LOG_PARSER(LL_FATAL, "Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
 		goto failure_cleanup;
 	}
 
 	parser = (ParserInstance *)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(ParserInstance), EvhdPoolTag);
 	if (!parser)
 	{
-		DEBUG("Failed to allocate memory for ParserInstance\n");
+        LOG_PARSER(LL_FATAL, "Failed to allocate memory for ParserInstance\n");
 		status = STATUS_NO_MEMORY;
 		goto failure_cleanup;
 	}
@@ -391,7 +394,7 @@ NTSTATUS EVhdMount(ParserInstance *parser, BOOLEAN bMountDismount, BOOLEAN regis
 
 	if (parser->bMounted == bMountDismount)
 	{
-		DEBUG("EVhdMount invalid parser state");
+        LOG_PARSER(LL_FATAL, "EVhdMount invalid parser state");
 		return STATUS_INVALID_DEVICE_STATE;
 	}
 
@@ -425,12 +428,12 @@ NTSTATUS EVhdExecuteSrb(SrbPacket *pPacket)
 		return STATUS_INVALID_PARAMETER;
 	if (parser->bSynchronouseIo)
 	{
-		DEBUG("Requested asynchronouse Io for synchronouse parser instance");
+        LOG_PARSER(LL_FATAL, "Requested asynchronouse Io for synchronouse parser instance");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
 	if (!parser->QoS.pfnStartIo)
 	{
-		DEBUG("Backing store haven't provided a valid asynchronouse Io");
+        LOG_PARSER(LL_FATAL, "Backing store doesn't provide a valid asynchronouse Io");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
 	pInner = pPacket->pInner;
@@ -513,7 +516,7 @@ NTSTATUS EVhdRestoreData(ParserInstance *parser, PVOID pData, ULONG32 size)
 		return STATUS_INVALID_BUFFER_SIZE;
 	if (!parser->bSynchronouseIo)
 	{
-		DEBUG("Requested asynchronouse Io for synchronouse parser instance");
+        LOG_PARSER(LL_FATAL, "Requested asynchronouse Io for synchronouse parser instance");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
 	status = parser->QoS.pfnRestoreData(parser->QoS.pIoInterface, (PUCHAR)pData + sizeof(PARSER_STATE),

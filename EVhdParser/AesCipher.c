@@ -1,5 +1,7 @@
+#include "stdafx.h"
 #include "AesCipher.h"
 #include "utils.h"
+#include "Log.h"
 
 const ULONG32 AesCipherTag = 'Aes ';
 
@@ -16,7 +18,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 	aesCipher = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(Aes128CipherContext), AesCipherTag);
 	if (!aesCipher)
 	{
-		DEBUG("Aes128Cipher: Failed to allocate memory for Aes128CipherContext");
+		LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Failed to allocate memory for Aes128CipherContext");
 		return STATUS_NO_MEMORY;
 	}
 	RtlZeroMemory(aesCipher, sizeof(Aes128CipherContext));
@@ -26,7 +28,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		NULL,
 		0)))
 	{
-		DEBUG("Aes128Cipher: Failed to open AES algorithm provider");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Failed to open AES algorithm provider");
 		ExFreePoolWithTag(aesCipher, AesCipherTag);
 		return status;
 	}
@@ -57,7 +59,8 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		(ULONG)wcslen(pszChainMode) + 1,
 		0)))
 	{
-		DEBUG("Aes128Cipher: Could not set chaingin mode");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not set chaingin mode");
+        return status;
 	}
 
 	if (!NT_SUCCESS(status = BCryptGetProperty(
@@ -68,7 +71,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		&cbData,
 		0)))
 	{
-		DEBUG("Aes128Cipher: Could not get key object length");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not get key object length");
 		return status;
 	}
 
@@ -80,20 +83,20 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		&cbData,
 		0)))
 	{
-		DEBUG("Aes128Cipher: Could not get block length");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not get block length");
 		return status;
 	}
 
 	if (cbBlockLen != Aes128CipherEngine.dwBlockSize)
 	{
-		DEBUG("Aes128Cipher: Block size do not match");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Block size do not match");
 		return STATUS_INVALID_BUFFER_SIZE;
 	}
 
 	aesCipher->pbKeyObject = ExAllocatePoolWithTag(NonPagedPoolNx, aesCipher->cbKeyObject, AesCipherTag);
 	if (!aesCipher->pbKeyObject)
 	{
-		DEBUG("Aes128Cipher: Failed to allocate memory for key object\n");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Failed to allocate memory for key object\n");
 		return STATUS_NO_MEMORY;
 	}
 
@@ -106,7 +109,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		Aes128CipherEngine.dwKeySize,
 		0)))
 	{
-		DEBUG("Aes128Cipher: Could not generate key");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not generate key");
 		ExFreePoolWithTag(aesCipher->pbKeyObject, AesCipherTag);
 		aesCipher->pbKeyObject = NULL;
 		return status;
@@ -138,7 +141,7 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *iv)
 
 	if (!aesCipher || aesCipher->hAlgorithm == NULL)
 	{
-		DEBUG("Aes128Cipher: invalid cipher");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: invalid cipher");
 		return STATUS_INVALID_HANDLE;
 	}
 	if (iv)
@@ -155,7 +158,7 @@ NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T 
 	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
 	if (!aesCipher || aesCipher->hKey == NULL)
 	{
-		DEBUG("Aes128Cipher: invalid or uninitialized cipher");
+		LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: invalid or uninitialized cipher");
 		return STATUS_INVALID_HANDLE;
 	}
 	ULONG cbResult = 0;
@@ -174,7 +177,7 @@ NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T 
 		&cbResult,
 		0)))
 	{
-		DEBUG("Aes128Cipher: failed to encrypt 0x%X bytes", size);
+        LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: failed to encrypt 0x%X bytes", size);
 		return status;
 	}
 	return status;
@@ -186,7 +189,7 @@ NTSTATUS Aes128CipherDecrypt(PVOID ctx, CONST VOID *cipher, VOID *plain, SIZE_T 
 	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
 	if (!aesCipher || aesCipher->hKey == NULL)
 	{
-		DEBUG("Aes128Cipher: invalid or uninitialized cipher");
+        LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: invalid or uninitialized cipher");
 		return STATUS_INVALID_HANDLE;
 	}
 	ULONG cbResult = 0;
@@ -205,7 +208,7 @@ NTSTATUS Aes128CipherDecrypt(PVOID ctx, CONST VOID *cipher, VOID *plain, SIZE_T 
 		&cbResult,
 		0)))
 	{
-		DEBUG("Aes128Cipher: failed to decrypt 0x%X bytes", size);
+        LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: failed to decrypt 0x%X bytes", size);
 		return status;
 	}
 	return status;

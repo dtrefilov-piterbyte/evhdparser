@@ -1,5 +1,7 @@
+#include "stdafx.h"
 #include "Gost89Cipher.h"
 #include "utils.h"
+#include "Log.h"
 
 /*
 Forward declaration of the cipher implementation
@@ -94,7 +96,7 @@ NTSTATUS Gost89CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 	c = (Gost89CipherContext *)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(Gost89CipherContext), PoolTag);
 	if (!c)
 	{
-		DEBUG("Failed to allocate memory for Gost89CipherContext\n");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Failed to allocate memory for Gost89CipherContext\n");
 		return STATUS_NO_MEMORY;
 	}
 	c->bIsCfb = bIsCfb;

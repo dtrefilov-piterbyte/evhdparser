@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "cipher.h"
 #include "XorCipher.h"
 #include "AesCipher.h"

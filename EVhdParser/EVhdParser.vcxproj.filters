@@ -60,6 +60,15 @@
     <ClCompile Include="2016\parser.c">
       <Filter>2016</Filter>
     </ClCompile>
+    <ClCompile Include="Log.c">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="RegUtils.c">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.c">
+      <Filter>common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="2012R2\driver.h">
@@ -120,6 +129,15 @@
       <Filter>2016</Filter>
     </ClInclude>
     <ClInclude Include="ExtIface.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="Log.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="RegUtils.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="stdafx.h">
       <Filter>common</Filter>
     </ClInclude>
   </ItemGroup>

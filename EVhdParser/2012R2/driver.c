@@ -1,9 +1,11 @@
+#include "stdafx.h"
 #include "driver.h"
 #include "Ioctl.h"
 #include "Vstor.h"
 #include <initguid.h>
 #include "parser.h"
 #include "Control.h"
+#include "Log.h"
 
 #if 0
 // {860ECCBC-6E7D-4A17-B181-81D64AF02170}
@@ -34,6 +36,7 @@ void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 		pDeviceObject = NULL;
 	}
 	CipherCleanup();
+    Log_Cleanup();
 }
 
 /** Default major function dispatcher */
@@ -66,7 +69,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		return status;
 	}
 
-	// This version of driver is only supported by Windows Server 2012 R2
+	// This version of driver only supports Windows Server 2012 R2
 	if (VersionInfo.dwMajorVersion != 6 || VersionInfo.dwMinorVersion != 3)
 	{
 		DbgPrint("Running on an unsupported platform: %d.%d.%d\n", VersionInfo.dwMajorVersion,
@@ -114,24 +117,32 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	ParserInfo.dwVersion					= 1;
 	ParserInfo.ParserId						= GUID_EVHD_PARSER_ID;
 	ParserInfo.pDriverObject				= pDriverObject;
-	ParserInfo.pfnOpenDisk					= EVhdOpenDisk;
-	ParserInfo.pfnCloseDisk					= EVhdCloseDisk;
-	ParserInfo.pfnMountDisk					= EVhdMountDisk;
-	ParserInfo.pfnDismountDisk				= EVhdDismountDisk;
-	ParserInfo.pfnQueryMountStatusDisk		= EVhdQueryMountStatusDisk;
-	ParserInfo.pfnExecuteScsiRequestDisk	= EVhdExecuteScsiRequestDisk;
-	ParserInfo.pfnQueryInformationDisk		= EVhdQueryInformationDisk;
-	ParserInfo.pfnQuerySaveVersionDisk		= EVhdQuerySaveVersionDisk;
-	ParserInfo.pfnSaveDisk					= EVhdSaveDisk;
-	ParserInfo.pfnRestoreDisk				= EVhdRestoreDisk;
-	ParserInfo.pfnSetBehaviourDisk			= EVhdSetBehaviourDisk;
-	ParserInfo.pfnSetQosConfigurationDisk	= EVhdSetQosConfigurationDisk;
-	ParserInfo.pfnGetQosInformationDisk		= EVhdGetQosInformationDisk;
+	ParserInfo.pfnOpenDisk					= EVhd_OpenDisk;
+	ParserInfo.pfnCloseDisk					= EVhd_CloseDisk;
+	ParserInfo.pfnMountDisk					= EVhd_MountDisk;
+	ParserInfo.pfnDismountDisk				= EVhd_DismountDisk;
+	ParserInfo.pfnQueryMountStatusDisk		= EVhd_QueryMountStatusDisk;
+	ParserInfo.pfnExecuteScsiRequestDisk	= EVhd_ExecuteScsiRequestDisk;
+	ParserInfo.pfnQueryInformationDisk		= EVhd_QueryInformationDisk;
+	ParserInfo.pfnQuerySaveVersionDisk		= EVhd_QuerySaveVersionDisk;
+	ParserInfo.pfnSaveDisk					= EVhd_SaveDisk;
+	ParserInfo.pfnRestoreDisk				= EVhd_RestoreDisk;
+	ParserInfo.pfnSetBehaviourDisk			= EVhd_SetBehaviourDisk;
+	ParserInfo.pfnSetQosConfigurationDisk	= EVhd_SetQosConfigurationDisk;
+	ParserInfo.pfnGetQosInformationDisk		= EVhd_GetQosInformationDisk;
+
+
+    status = Log_Initialize(pDeviceObject, pRegistryPath);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("Log_Initialize failed with error: %d\n", status);
+        return status;
+    }
 
 	status = VstorRegisterParser(&ParserInfo);
 	if (!NT_SUCCESS(status))
 	{
-		DbgPrint("VstorRegisterParser failed with error: %d\n", status);
+		LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "VstorRegisterParser failed with error: %d\n", status);
 		return status;
 	}
 

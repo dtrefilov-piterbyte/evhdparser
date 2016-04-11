@@ -1,7 +1,11 @@
+#include "stdafx.h"
+#include "Log.h"
 #include "parser.h"	  
 #include "Ioctl.h"
 #include "utils.h"	   
 #include <fltKernel.h>
+
+#define LOG_PARSER(level, format, ...) LOG_FUNCTION(level, LOG_CTG_PARSER, format, __VA_ARGS__)
 
 static const ULONG EvhdPoolTag = 'VVpp';
 static const ULONG EvhdQoSPoolTag = 'VVpc';
@@ -98,7 +102,7 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	parser->pDirectIoIrp = IoAllocateIrp(IoGetRelatedDeviceObject(parser->pVhdmpFileObject)->StackSize, FALSE);
 	if (!parser->pDirectIoIrp)
 	{
-		DEBUG("IoAllocateIrp failed\n");
+        LOG_PARSER(LL_FATAL, "IoAllocateIrp failed\n");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 	
@@ -106,14 +110,14 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	parser->pQoSStatusIrp = IoAllocateIrp(IoGetRelatedDeviceObject(parser->pVhdmpFileObject)->StackSize, FALSE);
 	if (!parser->pQoSStatusIrp)
 	{
-		DEBUG("IoAllocateIrp failed\n");
+        LOG_PARSER(LL_FATAL, "IoAllocateIrp failed\n");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
 	parser->pQoSStatusBuffer = ExAllocatePoolWithTag(NonPagedPoolNx, QoSBufferSize, EvhdQoSPoolTag);
 	if (!parser->pQoSStatusBuffer)
 	{
-		DEBUG("ExAllocatePoolWithTag failed\n");
+        LOG_PARSER(LL_FATAL, "ExAllocatePoolWithTag failed\n");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
@@ -122,7 +126,7 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	parser->pRecoveryStatusIrp = IoAllocateIrp(IoGetRelatedDeviceObject(parser->pVhdmpFileObject)->StackSize, FALSE);
 	if (!parser->pRecoveryStatusIrp)
 	{
-		DEBUG("IoAllocateIrp failed\n");
+        LOG_PARSER(LL_FATAL, "IoAllocateIrp failed\n");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
@@ -236,7 +240,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_STORAGE_REGISTER_IO failed with error 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "IOCTL_STORAGE_REGISTER_IO failed with error 0x%0X\n", status);
 			return status;
 		}
 
@@ -249,7 +253,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
 			return status;
 		}
 
@@ -308,14 +312,14 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pVmId ? &vmInfo : NULL);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
+        LOG_PARSER(LL_FATAL, "Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
 		goto failure_cleanup;
 	}
 
 	parser = (ParserInstance *)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(ParserInstance), EvhdPoolTag);
 	if (!parser)
 	{
-		DEBUG("Failed to allocate memory for ParserInstance\n");
+        LOG_PARSER(LL_FATAL, "Failed to allocate memory for ParserInstance\n");
 		status = STATUS_NO_MEMORY;
 		goto failure_cleanup;
 	}
@@ -368,7 +372,7 @@ NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, PGUID pUnkGuid, __ou
 	status = EvhdRegisterIo(parser, flags & 1, (flags >> 1) & 1, pUnkGuid);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("VHD: EvhdRegisterIo failed with error 0x%0x\n", status);
+        LOG_PARSER(LL_FATAL, "EvhdRegisterIo failed with error 0x%0x\n", status);
 		EvhdUnregisterIo(parser);
 		return status;
 	}
@@ -491,7 +495,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve disk type. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskType = Response.vals[0].dwLow;
@@ -501,7 +505,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve parser info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskFormat = Response.vals[0].dwLow;
@@ -511,7 +515,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve size info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->dwBlockSize = Response.vals[2].dwLow;
@@ -522,7 +526,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve linkage identifier. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve linkage identifier. 0x%0X\n", status);
 			return status;
 		}
 		pRes->LinkageId = Response.guid;
@@ -532,7 +536,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve in use flag. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve in use flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->bIsInUse = (BOOLEAN)Response.vals[0].dwLow;
@@ -542,7 +546,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve fully allocated flag. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve fully allocated flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->bIsFullyAllocated = (BOOLEAN)Response.vals[0].dwLow;
@@ -552,7 +556,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve unk9 flag. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve unk9 flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->f_1C = (BOOLEAN)Response.vals[0].dwLow;
@@ -562,7 +566,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve disk identifier. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskIdentifier = Response.guid;
@@ -606,7 +610,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			ResponseBuffer, ResponseBufferSize);
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve type info. 0x%0X\n", status);
 			ExFreePoolWithTag(ResponseBuffer, EvhdPoolTag);
 			return status;
 		}
@@ -632,7 +636,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(BOOLEAN));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve type info. 0x%0X\n", status);
 			return status;
 		}
 		*pRes = Response;
@@ -649,7 +653,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve size info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->dwSectorSize = Response.vals[2].dwHigh;
@@ -659,7 +663,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve number of sectors. 0x%0X\n", status);
+            LOG_PARSER(LL_FATAL, "Failed to retrieve number of sectors. 0x%0X\n", status);
 			return status;
 		}
 		pRes->dwNumSectors = Response.vals[0].dwLow;
@@ -667,7 +671,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 	}
 	else
 	{
-		DEBUG("Unknown Disk info type %X\n", type);
+        LOG_PARSER(LL_FATAL, "Unknown Disk info type %X\n", type);
 		status = STATUS_INVALID_DEVICE_REQUEST;
 	}
 
@@ -982,7 +986,6 @@ static NTSTATUS EvhdMetaOperationCompletionRoutine(PDEVICE_OBJECT DeviceObject, 
 
 static NTSTATUS EvhdStartMetaOperation(MetaOperation *pOperation, ULONG ControlCode, PVOID pBuffer, ULONG BufferSize)
 {
-	NTSTATUS Status = STATUS_SUCCESS;
 	PDEVICE_OBJECT pDeviceObject = NULL;
 	PIRP pIrp = pOperation->pIrp;
 	pIrp->Tail.Overlay.Thread = (PETHREAD)__readgsqword(0x188);				// Pointer to calling thread control block
@@ -1069,6 +1072,8 @@ typedef struct {
 
 static NTSTATUS EvhdSetSnapshot(MetaOperation *pOperation, VhdSetSnapshotRequest *pRequest)
 {
+    UNREFERENCED_PARAMETER(pOperation);
+    UNREFERENCED_PARAMETER(pRequest);
 	// TODO:
 	return STATUS_NOT_SUPPORTED;
 }
@@ -1098,7 +1103,7 @@ NTSTATUS EVhdCancelMetaOperation(MetaOperation *pOperation)
 	if (pOperation->pIrp)
 		IoCancelIrp(pOperation->pIrp);
 
-	// TODO: actually returns nothing
+	// TODO: Originally returns VOID?
 	return STATUS_SUCCESS;
 }
 
@@ -1127,6 +1132,7 @@ NTSTATUS EVhdCleanupMetaOperation(MetaOperation *pOperation)
 		IoFreeIrp(pOperation->pIrp);
 	}
 	ExFreePoolWithTag(pOperation, EvhdPoolTag);
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS EVhdParserDeleteSnapshot(ParserInstance *parser, void *pInputBuffer)

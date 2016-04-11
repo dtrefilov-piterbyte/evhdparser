@@ -1,5 +1,6 @@
+#include "stdafx.h"
+#include "Log.h"
 #include "driver.h"
-#include <initguid.h>
 #include "Vstor.h"
 #include "parser.h"
 #include "utils.h"
@@ -65,7 +66,7 @@ static NTSTATUS EVhdDriverLoad(ULONG32 *pResult)
 	status = FindShimDevice(&szShimName, &szRootPath);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("FindShimDevice failed with error 0x%08X", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "FindShimDevice failed with error 0x%08X", status);
 		goto cleanup_failure;
 	}
 		  
@@ -77,14 +78,14 @@ static NTSTATUS EVhdDriverLoad(ULONG32 *pResult)
 		FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN, FILE_NON_DIRECTORY_FILE, NULL, 0);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("ZwCreateFile %S failed with error 0x%08x\n", szShimName.Buffer, status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "ZwCreateFile %S failed with error 0x%08x\n", szShimName.Buffer, status);
 		goto cleanup_failure;
 	}
 
 	status = ObReferenceObjectByHandle(g_shimFileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("ObReferenceObjectByHandle failed with error 0x%08X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "ObReferenceObjectByHandle failed with error 0x%08X\n", status);
 		goto cleanup_failure;
 	}
 
@@ -142,14 +143,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	status = EVhdDriverLoad(&ParserInfo.dwBalancerId);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("EVhdDriverLoad failed with error: 0x%08X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "EVhdDriverLoad failed with error: 0x%08X\n", status);
 		return status;
 	}
 
 	status = RegisterParser(&ParserInfo);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("RegisterParser failed with error: 0x%08X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "RegisterParser failed with error: 0x%08X\n", status);
 		return status;
 	}
 

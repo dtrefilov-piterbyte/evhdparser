@@ -1,5 +1,7 @@
+#include "stdafx.h"
 #include "XorCipher.h"
 #include "utils.h"
+#include "Log.h"
 #include <xmmintrin.h>
 
 const ULONG32 XorCipherTag = 'Xor ';
@@ -20,7 +22,7 @@ NTSTATUS XorCipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 	xorCipher = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(XorCipherContext), XorCipherTag);
 	if (!xorCipher)
 	{
-		DEBUG("Failed to allocate memory for XorCipherContext\n");
+		LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Failed to allocate memory for XorCipherContext\n");
 		return STATUS_NO_MEMORY;
 	}
 	xorCipher->dwXorVal = xorOpts->XorMixingValue;

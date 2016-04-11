@@ -1,9 +1,11 @@
+#include "stdafx.h"
 #include "Vdrvroot.h" 
 #include <initguid.h>
 #include "Guids.h"
 #include "Ioctl.h"
 #include "utils.h"
 #include <stddef.h>
+#include "Log.h"
 
 NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 {
@@ -28,7 +30,7 @@ NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 	status = IoGetDeviceInterfaces(&GUID_DEVINTERFACE_SURFACE_VIRTUAL_DRIVE, NULL, 0, &SymbolicLinkList);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to find installed Hyper-V Virtual Drive Enumerator\n");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "Failed to find installed Hyper-V Virtual Drive Enumerator\n");
 		goto cleanup_failure;
 	}
 
@@ -41,7 +43,7 @@ NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 	status = IoGetDeviceObjectPointer(&DriveEnumeratorSymbolicLink, GENERIC_ALL, &pFileObject, &pDeviceObject);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("IoGetDeviceObjectPointer %S failed with error = 0x%0x\n", DriveEnumeratorSymbolicLink.Buffer, status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "IoGetDeviceObjectPointer %S failed with error = 0x%0x\n", DriveEnumeratorSymbolicLink.Buffer, status);
 		goto cleanup_failure;
 	}
 
@@ -56,7 +58,7 @@ NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 		&outputBuffer, sizeof(FindShimResponse));
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("SynchronouseCall failed with error 0x%0x\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "SynchronouseCall failed with error 0x%0x\n", status);
 		goto cleanup_failure;
 	}
 
@@ -121,7 +123,7 @@ NTSTATUS GetIsDifferencing(HANDLE FileHandle, __out BOOLEAN *pResult)
 	status = ObReferenceObjectByHandle(FileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("ObReferenceObjectByHandle() failed. 0x%0X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "ObReferenceObjectByHandle() failed. 0x%0X\n", status);
 		goto cleanup;
 	}
 
@@ -129,7 +131,7 @@ NTSTATUS GetIsDifferencing(HANDLE FileHandle, __out BOOLEAN *pResult)
 		&Response, sizeof(DiskInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "Failed to retreive disk type. 0x%0X\n", status);
 		goto cleanup;
 	}
 	*pResult = Response.vals[0].dwLow == 4;
@@ -156,7 +158,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	status = FindShimDevice(&VhdmpPath, diskPath);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("FindShimDevice failed\n");
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "FindShimDevice failed\n");
 		goto cleanup_failure;
 	}
 
@@ -173,7 +175,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	ea.VirtDisk.OpenFlags = 0;
 	if (!getInfoOnly)
 	{
-		ea.VirtDisk.OpenFlags |= 0x80000000;
+		ea.VirtDisk.OpenFlags |= 0x80000000;    // OPEN_MODE_SHARED
 #if WINVEREX >= 0x10000000
 		if (OpenFlags & 0x20)
 			ea.VirtDisk.OpenFlags |= 0x8;
@@ -251,17 +253,16 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	ObjectAttributes.ObjectName = &VhdmpPath;
 	ObjectAttributes.Attributes = OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE;
 
-#if WINVEREX >= 0x10000000
-
 	status = IoCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0,
 		FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_OPEN, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea),
 		CreateFileTypeNone, NULL, IO_FORCE_ACCESS_CHECK | IO_NO_PARAMETER_CHECKING);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
 		goto cleanup_failure;
 	}
 
+#if WINVEREX >= 0x10000000
 	if (OpenFlags & 0x40)
 	{
 		for (;;)
@@ -270,7 +271,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 			status = GetIsDifferencing(FileHandle, &IsDifferencing);
 			if (!NT_SUCCESS(status))
 			{
-				DEBUG("GetIsDifferencing failed with error 0x%0x\n", status);
+                LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "GetIsDifferencing failed with error 0x%0x\n", status);
 				goto cleanup_failure;
 			}
 			if (!IsDifferencing)
@@ -278,7 +279,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 			status = ZwClose(FileHandle);
 			if (!NT_SUCCESS(status))
 			{
-				DEBUG("ZwClose failed with error 0x%0x\n", status);
+                LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "ZwClose failed with error 0x%0x\n", status);
 				goto cleanup_failure;
 			}
 
@@ -287,28 +288,17 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 				CreateFileTypeNone, NULL, IO_FORCE_ACCESS_CHECK | IO_NO_PARAMETER_CHECKING);
 			if (!NT_SUCCESS(status))
 			{
-				DEBUG("IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
+                LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "IoCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
 				goto cleanup_failure;
 			}
 		}
 	}
-
-
-#else
-	status = ZwCreateFile(&FileHandle, GENERIC_READ | SYNCHRONIZE, &ObjectAttributes, &StatusBlock, 0,
-		FILE_READ_ATTRIBUTES, 0, 0, FILE_NON_DIRECTORY_FILE, &ea, sizeof(ea));
-	if (!NT_SUCCESS(status))
-	{
-		DEBUG("ZwCreateFile %S failed with error 0x%0x\n", VhdmpPath.Buffer, status);
-		goto cleanup_failure;
-	}
 #endif
-
 
 	status = ObReferenceObjectByHandle(FileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("ObReferenceObjectByHandle failed with error 0x%0X\n", status);
+        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "ObReferenceObjectByHandle failed with error 0x%0X\n", status);
 		goto cleanup_failure;
 	}
 

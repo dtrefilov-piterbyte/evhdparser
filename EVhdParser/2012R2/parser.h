@@ -35,16 +35,16 @@ typedef struct _ParserInstance {
 } ParserInstance;
 
 /** Forward declaration of parser handler */
-NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId, PVOID vstorInterface, ParserInstance **outParser);
-VOID EVhdCloseDisk(ParserInstance *parser);
-NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags1, PARSER_MOUNT_INFO *mountInfo);
-NTSTATUS EVhdDismountDisk(ParserInstance *parser);
-NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser);
-NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket);
-NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize);
-NTSTATUS EVhdQuerySaveVersionDisk(ParserInstance *parser, INT *pVersion);
-NTSTATUS EVhdSaveDisk(ParserInstance *parser, PVOID data, ULONG32 size, ULONG32 *dataStored);
-NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG32 size);
-NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour);
-NTSTATUS EVhdSetQosConfigurationDisk(ParserInstance *parser, PVOID pConfig);
-NTSTATUS EVhdGetQosInformationDisk(ParserInstance *parser, PVOID pInfo);
+NTSTATUS EVhd_OpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId, PVOID vstorInterface, PVOID *pOutContext);
+VOID EVhd_CloseDisk(PVOID pContext);
+NTSTATUS EVhd_MountDisk(PVOID pContext, UCHAR flags1, PARSER_MOUNT_INFO *mountInfo);
+NTSTATUS EVhd_DismountDisk(PVOID pContext);
+NTSTATUS EVhd_QueryMountStatusDisk(PVOID pContext);
+NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest);
+NTSTATUS EVhd_QueryInformationDisk(PVOID pContext, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize);
+NTSTATUS EVhd_QuerySaveVersionDisk(PVOID pContext, INT *pVersion);
+NTSTATUS EVhd_SaveDisk(PVOID pContext, PVOID data, ULONG32 size, ULONG32 *dataStored);
+NTSTATUS EVhd_RestoreDisk(PVOID pContext, INT revision, PVOID data, ULONG32 size);
+NTSTATUS EVhd_SetBehaviourDisk(PVOID pContext, INT behaviour);
+NTSTATUS EVhd_SetQosConfigurationDisk(PVOID pContext, PVOID pConfig);
+NTSTATUS EVhd_GetQosInformationDisk(PVOID pContext, PVOID pInfo);

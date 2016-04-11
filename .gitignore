@@ -3,3 +3,7 @@
 /*.suo
 *.vcxproj.user
 x64
+Win8Debug
+Win8.1Debug
+Win10Debug
+ipch

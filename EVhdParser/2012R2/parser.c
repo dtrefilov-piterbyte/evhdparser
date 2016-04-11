@@ -1,17 +1,20 @@
+#include "stdafx.h"
 #include "parser.h"
 #include "Ioctl.h"
 #include "utils.h"
-#include <initguid.h>
-#include <ntddscsi.h>  
+//#include <ntddscsi.h>
 #include <fltKernel.h>
 #include "Vdrvroot.h"
 #include "Guids.h"
 #include "Gost89Cipher.h"
+#include "Log.h"
 
+
+#define LOG_PARSER(level, format, ...) LOG_FUNCTION(level, LOG_CTG_PARSER, format, __VA_ARGS__)
 
 static const ULONG EvhdPoolTag = 'VVpp';
 
-static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
+static NTSTATUS EVhd_InitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
 {
 	UNREFERENCED_PARAMETER(diskPath);
 	NTSTATUS status = STATUS_SUCCESS;
@@ -22,7 +25,7 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		&Response, sizeof(DiskInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
+        LOG_PARSER(LL_FATAL, "Failed to retreive parser info. 0x%0X\n", status);
 		return status;
 	}
 	DiskFormat = Response.vals[0].dwLow;
@@ -38,14 +41,14 @@ static NTSTATUS EvhdInitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath
 		&Response, sizeof(DiskInfoResponse));
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to retrieve virtual disk identifier. 0x%0X\n", status);
+        LOG_PARSER(LL_FATAL, "Failed to retreive virtual disk identifier. 0x%0X\n", status);
 		return status;
 	}
 	status = CipherEngineGet(&Response.guid, &parser->pCipherEngine, &parser->pCipherCtx);
 	return status;
 }
 
-static NTSTATUS EvhdFinalizeCipher(ParserInstance *parser)
+static NTSTATUS EVhd_FinalizeCipher(ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	if (parser->pCipherCtx)
@@ -57,7 +60,7 @@ static NTSTATUS EvhdFinalizeCipher(ParserInstance *parser)
 	return status;
 }
 
-static PMDL AllocateInnerMdl(PMDL pSourceMdl)
+static PMDL EVhd_AllocateInnerMdl(PMDL pSourceMdl)
 {
 	PHYSICAL_ADDRESS LowAddress, HighAddress, SkipBytes;
 	LowAddress.QuadPart = 0;
@@ -70,7 +73,7 @@ static PMDL AllocateInnerMdl(PMDL pSourceMdl)
 	return pNewMdl;
 }
 
-static PMDL FreeInnerMdl(PMDL pMdl)
+static PMDL EVhd_FreeInnerMdl(PMDL pMdl)
 {
 	PMDL pSourceMdl = pMdl->Next;
 	pMdl->Next = NULL;
@@ -78,7 +81,7 @@ static PMDL FreeInnerMdl(PMDL pMdl)
 	return pSourceMdl;
 }
 
-static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, BOOLEAN Encrypt)
+static NTSTATUS EVhd_CryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, BOOLEAN Encrypt)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
@@ -116,7 +119,7 @@ static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pT
 
 	ASSERT(0 == size % SectorSize);
 
-	DEBUG("VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
+    LOG_PARSER(LL_VERBOSE, "VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
 
 	for (SectorOffset = 0; SectorOffset < size; SectorOffset += SectorSize)
 	{
@@ -135,7 +138,7 @@ static NTSTATUS EvhdCryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pT
 	return status;
 }
 
-static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
+static NTSTATUS EVhd_Initialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	DiskInfoResponse resp = { 0 };
@@ -146,16 +149,18 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	parser->pIrp = IoAllocateIrp(IoGetRelatedDeviceObject(parser->pVhdmpFileObject)->StackSize, FALSE);
 	if (!parser->pIrp)
 	{
-		DEBUG("IoAllocateIrp failed\n");
+        LOG_PARSER(LL_FATAL, "IoAllocateIrp failed\n");
 		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &req, sizeof(req),
 		&resp, sizeof(DiskInfoResponse));
 
+    FltInitializePushLock(&parser->IoLock);
+
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("SynchronouseCall IOCTL_STORAGE_VHD_GET_INFORMATION failed with error 0x%0x\n", status);
+        LOG_PARSER(LL_FATAL, "SynchronouseCall IOCTL_STORAGE_VHD_GET_INFORMATION failed with error 0x%0x\n", status);
 	}
 	else
 		parser->dwNumSectors = resp.vals[0].dwLow;
@@ -163,9 +168,9 @@ static NTSTATUS EvhdInitialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Par
 	return status;
 }
 
-static VOID EvhdFinalize(ParserInstance *parser)
+static VOID EVhd_Finalize(ParserInstance *parser)
 {
-	EvhdFinalizeCipher(parser);
+	EVhd_FinalizeCipher(parser);
 
 	if (parser->pIrp)
 		IoFreeIrp(parser->pIrp);
@@ -183,7 +188,7 @@ static VOID EvhdFinalize(ParserInstance *parser)
 	}
 }
 
-static NTSTATUS EvhdRegisterQosInterface(ParserInstance *parser)
+static NTSTATUS EVhd_RegisterQosInterface(ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -197,7 +202,7 @@ static NTSTATUS EvhdRegisterQosInterface(ParserInstance *parser)
 	return status;
 }
 
-static NTSTATUS EvhdUnregisterQosInterface(ParserInstance *parser)
+static NTSTATUS EVhd_UnregisterQosInterface(ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
@@ -210,48 +215,49 @@ static NTSTATUS EvhdUnregisterQosInterface(ParserInstance *parser)
 	return status;
 }
 
-static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
+static void EVhd_PostProcessScsiPacket(SCSI_REQUEST *pRequest, NTSTATUS status)
 {
-	pPacket->pRequest->SrbStatus = pPacket->pInner->Srb.SrbStatus;
-	pPacket->pRequest->ScsiStatus = pPacket->pInner->Srb.ScsiStatus;
-	pPacket->pRequest->SenseInfoBufferLength = pPacket->pInner->Srb.SenseInfoBufferLength;
-	pPacket->pRequest->DataTransferLength = pPacket->pInner->Srb.DataTransferLength;
+    pRequest->pVscRequest->SrbStatus = pRequest->pVspRequest->Srb.SrbStatus;
+    pRequest->pVscRequest->ScsiStatus = pRequest->pVspRequest->Srb.ScsiStatus;
+    pRequest->pVscRequest->SenseInfoBufferLength = pRequest->pVspRequest->Srb.SenseInfoBufferLength;
+    pRequest->pVscRequest->DataTransferLength = pRequest->pVspRequest->Srb.DataTransferLength;
 	if (!NT_SUCCESS(status))
 	{
-		if (SRB_STATUS_SUCCESS != pPacket->pInner->Srb.SrbStatus)
-			pPacket->pRequest->SrbStatus = SRB_STATUS_ERROR;
+        if (SRB_STATUS_SUCCESS != pRequest->pVspRequest->Srb.SrbStatus)
+            pRequest->pVscRequest->SrbStatus = SRB_STATUS_ERROR;
 	}
 	else
 	{
-		USHORT wNumSectors = RtlUshortByteSwap(*(USHORT *)&(pPacket->pInner->Srb.Cdb[7]));
-		ULONG dwStartingSector = RtlUlongByteSwap(*(ULONG *)&(pPacket->pInner->Srb.Cdb[2]));
-
-		switch (pPacket->pInner->Srb.Cdb[0])
+        USHORT wNumSectors = RtlUshortByteSwap(*(USHORT *)&(pRequest->pVspRequest->Srb.Cdb[7]));
+        ULONG dwStartingSector = RtlUlongByteSwap(*(ULONG *)&(pRequest->pVspRequest->Srb.Cdb[2]));
+        ParserInstance *pParser = pRequest->pVspRequest->pContext;
+        switch (pRequest->pVspRequest->Srb.Cdb[0])
 		{
 		case SCSI_OP_CODE_INQUIRY:
-			pPacket->pRequest->bFlags |= 1;
+            pRequest->pVscRequest->bFlags |= 1;
 			break;
 		case SCSI_OP_CODE_READ_6:
 		case SCSI_OP_CODE_READ_10:
 		case SCSI_OP_CODE_READ_12:
 		case SCSI_OP_CODE_READ_16:
-			if (pPacket->pInner->pParser->pCipherCtx)
+            if (pParser->pCipherCtx)
 			{
-				DEBUG("VHD[%X]: Read request complete: %X blocks starting from %X\n",
-					PsGetCurrentThreadId(), wNumSectors, dwStartingSector);
-				EvhdCryptBlocks(pPacket->pInner->pParser, pPacket->pMdl, pPacket->pMdl, pPacket->pInner->Srb.DataTransferLength, FALSE);
+                LOG_PARSER(LL_VERBOSE, "Read request complete: %X blocks starting from %X\n",
+					wNumSectors, dwStartingSector);
+                EVhd_CryptBlocks(pParser, pRequest->pMdl, pRequest->pMdl,
+                    pRequest->pVspRequest->Srb.DataTransferLength, FALSE);
 			}
 			break;
 		case SCSI_OP_CODE_WRITE_6:
 		case SCSI_OP_CODE_WRITE_10:
 		case SCSI_OP_CODE_WRITE_12:
 		case SCSI_OP_CODE_WRITE_16:
-			if (pPacket->pInner->pParser->pCipherCtx)
+            if (pParser->pCipherCtx)
 			{
-				DEBUG("VHD[%X]: Write request complete: %X blocks starting from %X\n",
-					PsGetCurrentThreadId(), wNumSectors, dwStartingSector);
+                LOG_PARSER(LL_VERBOSE, "Write request complete: %X blocks starting from %X\n",
+					wNumSectors, dwStartingSector);
 
-				pPacket->pMdl = FreeInnerMdl(pPacket->pMdl);
+                pRequest->pMdl = EVhd_FreeInnerMdl(pRequest->pMdl);
 			}
 			break;
 		}
@@ -259,25 +265,36 @@ static void EvhdPostProcessScsiPacket(ScsiPacket *pPacket, NTSTATUS status)
 	}
 }
 
-NTSTATUS EvhdCompleteScsiRequest(ScsiPacket *pPacket, NTSTATUS status)
+NTSTATUS EVhd_CompleteScsiRequest(SCSI_REQUEST *pRequest, NTSTATUS VspStatus)
 {
-	EvhdPostProcessScsiPacket(pPacket, status);
-	return VstorCompleteScsiRequest(pPacket);
+    NTSTATUS status;
+    TRACE_FUNCTION_IN();
+    EVhd_PostProcessScsiPacket(pRequest, VspStatus);
+	status = VstorCompleteScsiRequest(pRequest);
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
-NTSTATUS EvhdSendNotification(void *param1, INT param2)
+NTSTATUS EVhd_SendNotification(void *param1, INT param2)
 {
-	return VstorSendNotification(param1, param2);
+    TRACE_FUNCTION_IN();
+	NTSTATUS status = VstorSendNotification(param1, param2);
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
-NTSTATUS EvhdSendMediaNotification(void *param1)
+NTSTATUS EVhd_SendMediaNotification(void *param1)
 {
-	return VstorSendMediaNotification(param1);
+    TRACE_FUNCTION_IN();
+	NTSTATUS status = VstorSendMediaNotification(param1);
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
 
-static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN flag2)
+static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN flag2)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 
 #pragma pack(push, 1)
@@ -311,9 +328,9 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 		request.dwFlags = flag1 ? 9 : 8;
 		request.wFlags = 0x2;
 		if (flag2) request.wFlags |= 0x1;
-		request.pfnCompleteScsiRequest = &EvhdCompleteScsiRequest;
-		request.pfnSendMediaNotification = &EvhdSendMediaNotification;
-		request.pfnSendNotification = &EvhdSendNotification;
+		request.pfnCompleteScsiRequest = &EVhd_CompleteScsiRequest;
+		request.pfnSendMediaNotification = &EVhd_SendMediaNotification;
+		request.pfnSendNotification = &EVhd_SendNotification;
 		request.pVstorInterface = parser->pVstorInterface;
 
 		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REGISTER_IO, &request, sizeof(RegisterIoRequest),
@@ -321,7 +338,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_STORAGE_REGISTER_IO failed with error 0x%0X\n", status);
+			LOG_PARSER(LL_ERROR, "IOCTL_STORAGE_REGISTER_IO failed with error 0x%0X\n", status);
 			return status;
 		}
 
@@ -334,7 +351,7 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
+			LOG_PARSER(LL_ERROR, "IOCTL_SCSI_GET_ADDRESS failed with error 0x%0X\n", status);
 			return status;
 		}
 
@@ -343,10 +360,12 @@ static NTSTATUS EvhdRegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN fl
 		parser->ScsiTargetId = scsiAddressResponse.TargetId;
 	}
 
+    TRACE_FUNCTION_OUT_STATUS(status);
+
 	return status;
 }
 
-static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, PVOID pInputBuffer, ULONG InputBufferSize)
+static NTSTATUS EVhd_DirectIoControl(ParserInstance *parser, ULONG ControlCode, PVOID pInputBuffer, ULONG InputBufferSize)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	PDEVICE_OBJECT pDeviceObject = NULL;
@@ -376,8 +395,9 @@ static NTSTATUS EvhdDirectIoControl(ParserInstance *parser, ULONG ControlCode, P
 	return status;
 }
 
-static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
+static NTSTATUS EVhd_UnregisterIo(ParserInstance *parser)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 
 	if (parser->bIoRegistered)
@@ -390,7 +410,7 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 		} RemoveVhdRequest = { 1 };
 #pragma pack(pop)
 
-		EvhdDirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest));
+		EVhd_DirectIoControl(parser, IOCTL_STORAGE_REMOVE_VIRTUAL_DISK, &RemoveVhdRequest, sizeof(RemoveVhdRequest));
 
 		parser->bIoRegistered = FALSE;
 		parser->Io.pIoInterface = NULL;
@@ -400,13 +420,15 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 		parser->dwDiskSaveSize = 0;
 		parser->dwInnerBufferSize = 0;
 	}
+    TRACE_FUNCTION_OUT_STATUS(status);
 
 	return status;
 }
 
 /** Create virtual disk parser */
-NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId, void *vstorInterface, ParserInstance **ppOutParser)
+NTSTATUS EVhd_OpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId, PVOID vstorInterface, PVOID *ppOutContext)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 	PFILE_OBJECT pFileObject = NULL;
 	HANDLE FileHandle = NULL;
@@ -424,26 +446,26 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pVmId ? &vmInfo : NULL);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
+        LOG_PARSER(LL_ERROR, "Failed to open vhdmp device for virtual disk file %S\n", diskPath->Buffer);
 		goto failure_cleanup;
 	}
 
 	parser = (ParserInstance *)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(ParserInstance), EvhdPoolTag);
 	if (!parser)
 	{
-		DEBUG("Failed to allocate memory for ParserInstance\n");
+        LOG_PARSER(LL_ERROR, "Failed to allocate memory for ParserInstance\n");
 		status = STATUS_NO_MEMORY;
 		goto failure_cleanup;
 	}
 
 	memset(parser, 0, sizeof(ParserInstance));
 
-	status = EvhdInitialize(FileHandle, pFileObject, parser);
+	status = EVhd_Initialize(FileHandle, pFileObject, parser);
 
 	if (!NT_SUCCESS(status))
 		goto failure_cleanup;
 
-	status = EvhdRegisterQosInterface(parser);
+	status = EVhd_RegisterQosInterface(parser);
 
 	if (!NT_SUCCESS(status))
 		goto failure_cleanup;
@@ -455,14 +477,14 @@ NTSTATUS EVhdOpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId,
 
 	parser->pVstorInterface = vstorInterface;
 
-	status = EvhdInitCipher(parser, diskPath);
+	status = EVhd_InitCipher(parser, diskPath);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("EvhdInitCipher failed with error 0x%08X\n", status);
+        LOG_PARSER(LL_ERROR, "EvhdInitCipher failed with error 0x%08X\n", status);
 		goto failure_cleanup;
 	}
 
-	*ppOutParser = parser;
+	*ppOutContext = parser;
 
 	goto cleanup;
 
@@ -474,58 +496,70 @@ failure_cleanup:
 	}
 	if (parser)
 	{
-		EVhdCloseDisk(parser);
+		EVhd_CloseDisk(parser);
 	}
 
 cleanup:
+    TRACE_FUNCTION_OUT_STATUS(status);
+
 	return status;
 }
 
 /** Destroy virtual disk parser */
-VOID EVhdCloseDisk(ParserInstance *parser)
+VOID EVhd_CloseDisk(PVOID pContext)
 {
+    TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	if (parser->pVhdmpFileObject && parser->bQosRegistered && parser->Qos.pQosInterface)
-		EvhdUnregisterQosInterface(parser);
+		EVhd_UnregisterQosInterface(parser);
 	if (parser->bMounted)
-		EvhdUnregisterIo(parser);
+		EVhd_UnregisterIo(parser);
 
-	EvhdFinalize(parser);
+	EVhd_Finalize(parser);
 	ExFreePoolWithTag(parser, EvhdPoolTag);
+    TRACE_FUNCTION_OUT();
 }
 
 /** Initiate virtual disk IO */
-NTSTATUS EVhdMountDisk(ParserInstance *parser, UCHAR flags, PARSER_MOUNT_INFO *mountInfo)
+NTSTATUS EVhd_MountDisk(PVOID pContext, UCHAR flags, PARSER_MOUNT_INFO *mountInfo)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 
-	status = EvhdRegisterIo(parser, flags & 1, (flags >> 1) & 1);
+	status = EVhd_RegisterIo(parser, flags & 1, (flags >> 1) & 1);
 	if (!NT_SUCCESS(status))
 	{
-		DEBUG("VHD: EvhdRegisterIo failed with error 0x%0x\n", status);
-		EvhdUnregisterIo(parser);
+        LOG_PARSER(LL_ERROR, "VHD: EvhdRegisterIo failed with error 0x%0x\n", status);
+		EVhd_UnregisterIo(parser);
 		return status;
 	}
 	parser->bMounted = TRUE;
 	mountInfo->dwInnerBufferSize = parser->dwInnerBufferSize;
 	mountInfo->bUnk = FALSE;
 	mountInfo->bFastPause = parser->bFastPause;
-
+    TRACE_FUNCTION_OUT_STATUS(status);
 	return status;
 }
 
 /** Finalize virtual disk IO */
-NTSTATUS EVhdDismountDisk(ParserInstance *parser)
+NTSTATUS EVhd_DismountDisk(PVOID pContext)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
-	status = EvhdUnregisterIo(parser);
+    ParserInstance *parser = pContext;
+	status = EVhd_UnregisterIo(parser);
 	parser->bMounted = FALSE;
+    TRACE_FUNCTION_OUT_STATUS(status);
 	return status;
 }
 
 /** Validate mounted disk */
-NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser)
+NTSTATUS EVhd_QueryMountStatusDisk(PVOID pContext)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 	if (!parser->bIoRegistered)
 		return status;
 #pragma pack(push, 1)
@@ -541,44 +575,54 @@ NTSTATUS EVhdQueryMountStatusDisk(ParserInstance *parser)
 	Request.qwUnk1 = 0;
 	Request.qwUnk2 = 0;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_VALIDATE, &Request, sizeof(Request), NULL, 0);
+    TRACE_FUNCTION_OUT_STATUS(status);
 	return status;
 }
 
 /** Scsi request filter function */
-NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
+NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
 {
+    //TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
-	ScsiPacketInnerRequest *pInner = pPacket->pInner;
-	ScsiPacketRequest *pRequest = pPacket->pRequest;
-	PMDL pMdl = pPacket->pMdl;
-	SCSI_OP_CODE opCode = (UCHAR)pRequest->Sense.Cdb6.OpCode;
-	memset(&pInner->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
-	pInner->pParser = parser;
-	pInner->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
-	pInner->Srb.SrbStatus = pRequest->SrbStatus;
-	pInner->Srb.ScsiStatus = pRequest->ScsiStatus;
-	pInner->Srb.PathId = parser->ScsiPathId;
-	pInner->Srb.TargetId = parser->ScsiTargetId;
-	pInner->Srb.Lun = parser->ScsiLun;
-	pInner->Srb.CdbLength = pRequest->CdbLength;
-	pInner->Srb.SenseInfoBufferLength = pRequest->SenseInfoBufferLength;
-	pInner->Srb.SrbFlags = pRequest->bDataIn ? SRB_FLAGS_DATA_IN : SRB_FLAGS_DATA_OUT;
-	pInner->Srb.DataTransferLength = pRequest->DataTransferLength;
-	pInner->Srb.SrbFlags |= pRequest->SrbFlags & 8000;			  // Non-standard
-	pInner->Srb.SrbExtension = pInner + 1;	// variable-length extension right after the inner request block
-	pInner->Srb.SenseInfoBuffer = &pRequest->Sense;
-	memmove(pInner->Srb.Cdb, &pRequest->Sense, pRequest->CdbLength);
-	if (parser->pCipherCtx) DEBUG("VHD[%X]: Scsi request: %02X, %02X, %04X\n", PsGetCurrentThreadId(), opCode, pRequest->bDataIn, pRequest->DataTransferLength);
-	USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pPacket->pInner->Srb.Cdb[7]));
-	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pPacket->pInner->Srb.Cdb[2]));
+    ParserInstance *parser = pContext;
+	STORVSP_REQUEST *pVspRequest = pRequest->pVspRequest;
+    STORVSC_REQUEST *pVscRequest = pRequest->pVscRequest;
+	PMDL pMdl = pRequest->pMdl;
+    SCSI_OP_CODE opCode = (UCHAR)pVscRequest->Sense.Cdb6.OpCode;
+	memset(&pVspRequest->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
+	pVspRequest->pContext = pContext;
+	pVspRequest->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
+    pVspRequest->Srb.SrbStatus = pVscRequest->SrbStatus;
+    pVspRequest->Srb.ScsiStatus = pVscRequest->ScsiStatus;
+	pVspRequest->Srb.PathId = parser->ScsiPathId;
+	pVspRequest->Srb.TargetId = parser->ScsiTargetId;
+	pVspRequest->Srb.Lun = parser->ScsiLun;
+    pVspRequest->Srb.CdbLength = pVscRequest->CdbLength;
+    pVspRequest->Srb.SenseInfoBufferLength = pVscRequest->SenseInfoBufferLength;
+    switch (pVscRequest->bType) {
+    case READ_TYPE:
+        pVspRequest->Srb.SrbFlags = SRB_FLAGS_DATA_IN;
+        break;
+    default:
+        pVspRequest->Srb.SrbFlags = SRB_FLAGS_DATA_OUT;
+    }
+    pVspRequest->Srb.DataTransferLength = pVscRequest->DataTransferLength;
+    pVspRequest->Srb.SrbFlags |= pVscRequest->SrbFlags & 8000;			  // Non-standard
+	pVspRequest->Srb.SrbExtension = pVspRequest + 1;	// variable-length extension right after the inner request block
+    pVspRequest->Srb.SenseInfoBuffer = &pVscRequest->Sense;
+    memmove(pVspRequest->Srb.Cdb, &pVscRequest->Sense, pVscRequest->CdbLength);
+	if (parser->pCipherCtx)
+        LOG_PARSER(LL_VERBOSE, "Scsi request: %02X, %02X, %04X\n", opCode, pVscRequest->bType, pVscRequest->DataTransferLength);
+	USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pRequest->pVspRequest->Srb.Cdb[7]));
+	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pRequest->pVspRequest->Srb.Cdb[2]));
 	switch (opCode)
 	{
 	default:
 		if (pMdl)
 		{
-			pInner->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
+			pVspRequest->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
 				pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
-			if (!pInner->Srb.DataBuffer)
+			if (!pVspRequest->Srb.DataBuffer)
 			{
 				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
@@ -591,13 +635,13 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 	case SCSI_OP_CODE_WRITE_16:
 		if (parser->pCipherCtx)
 		{
-			DEBUG("VHD[%X]: Write request: %X blocks starting from %X\n", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
+            LOG_PARSER(LL_VERBOSE, "Write request: %X blocks starting from %X\n", wBlocks, dwBlockOffset);
 
-			pPacket->pMdl = AllocateInnerMdl(pMdl);
+			pRequest->pMdl = EVhd_AllocateInnerMdl(pMdl);
 
-			status = EvhdCryptBlocks(parser, pMdl, pPacket->pMdl, pRequest->DataTransferLength, TRUE);
+            status = EVhd_CryptBlocks(parser, pMdl, pRequest->pMdl, pVscRequest->DataTransferLength, TRUE);
 
-			pMdl = pPacket->pMdl;
+			pMdl = pRequest->pMdl;
 
 			if (pMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
 				MmUnmapLockedPages(pMdl->MappedSystemVa, pMdl);
@@ -609,33 +653,36 @@ NTSTATUS EVhdExecuteScsiRequestDisk(ParserInstance *parser, ScsiPacket *pPacket)
 	case SCSI_OP_CODE_READ_16:
 		if (parser->pCipherCtx)
 		{
-			DEBUG("VHD[%X]: Read request: %X blocks starting from %X\n", PsGetCurrentThreadId(), wBlocks, dwBlockOffset);
+            LOG_PARSER(LL_VERBOSE, "Read request: %X blocks starting from %X\n", wBlocks, dwBlockOffset);
 		}
 		break;
 	}
 	
 	if (NT_SUCCESS(status))
-		status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pInner, pMdl, pPacket->bUnkFlag,
-			pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
+		status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pRequest, pVspRequest, pMdl, pRequest->bUnkFlag,
+			pRequest->bUseInternalSenseBuffer ? &pRequest->Sense : NULL);
 	else
-		pRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
+        pVscRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
 
 	if (STATUS_PENDING != status)
 	{
-		EvhdPostProcessScsiPacket(pPacket, status);
-		status = VstorCompleteScsiRequest(pPacket);
+		EVhd_PostProcessScsiPacket(pRequest, status);
+		status = VstorCompleteScsiRequest(pRequest);
 	}
+    //TRACE_FUNCTION_OUT_STATUS(status);
 	
 	return status;
 
 }
 
 /** Query virtual disk info */
-NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize)
+NTSTATUS EVhd_QueryInformationDisk(PVOID pContext, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize)
 {
+    TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 	EDiskInfoType Request = EDiskInfoType_Geometry;
 	DiskInfoResponse Response = { 0 };
+    ParserInstance *parser = pContext;
 
 	UNREFERENCED_PARAMETER(unused1);
 	UNREFERENCED_PARAMETER(unused2);
@@ -653,7 +700,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve disk type. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive disk type. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskType = Response.vals[0].dwLow;
@@ -663,7 +710,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve parser info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive parser info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskFormat = Response.vals[0].dwLow;
@@ -673,7 +720,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive size info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->dwBlockSize = Response.vals[2].dwLow;
@@ -684,7 +731,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve linkage identifier. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive linkage identifier. 0x%0X\n", status);
 			return status;
 		}
 		pRes->LinkageId = Response.guid;
@@ -694,7 +741,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve in use flag. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive in use flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->bIsInUse = (BOOLEAN)Response.vals[0].dwLow;
@@ -704,7 +751,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve fully allocated flag. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive fully allocated flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->bIsFullyAllocated = (BOOLEAN)Response.vals[0].dwLow;
@@ -714,7 +761,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve unk9 flag. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive unk9 flag. 0x%0X\n", status);
 			return status;
 		}
 		pRes->f_1C = (BOOLEAN)Response.vals[0].dwLow;
@@ -724,7 +771,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve disk identifier. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive disk identifier. 0x%0X\n", status);
 			return status;
 		}
 		pRes->DiskIdentifier = Response.guid;
@@ -741,7 +788,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive type info. 0x%0X\n", status);
 			return status;
 		}
 		*pRes = Response.vals[0].dwLow;
@@ -780,7 +827,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			ResponseBuffer, ResponseBufferSize);
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive type info. 0x%0X\n", status);
 			ExFreePoolWithTag(ResponseBuffer, EvhdPoolTag);
 			return status;
 		}
@@ -806,7 +853,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(BOOLEAN));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve type info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive type info. 0x%0X\n", status);
 			return status;
 		}
 		*pRes = Response;
@@ -823,7 +870,7 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 			&Response, sizeof(DiskInfoResponse));
 		if (!NT_SUCCESS(status))
 		{
-			DEBUG("Failed to retrieve size info. 0x%0X\n", status);
+            LOG_PARSER(LL_ERROR, "Failed to retreive size info. 0x%0X\n", status);
 			return status;
 		}
 		pRes->dwSectorSize = Response.vals[2].dwHigh;
@@ -833,51 +880,70 @@ NTSTATUS EVhdQueryInformationDisk(ParserInstance *parser, EDiskInfoType type, IN
 	}
 	else
 	{
-		DEBUG("Unknown Disk info type %X\n", type);
+        LOG_PARSER(LL_ERROR, "Unknown Disk info type %X\n", type);
 		status = STATUS_INVALID_DEVICE_REQUEST;
 	}
+    TRACE_FUNCTION_OUT_STATUS(status);
 
 	return status;
 }
 
-NTSTATUS EVhdQuerySaveVersionDisk(ParserInstance *parser, INT *pVersion)
+NTSTATUS EVhd_QuerySaveVersionDisk(PVOID pContext, INT *pVersion)
 {
-	UNREFERENCED_PARAMETER(parser);
+	UNREFERENCED_PARAMETER(pContext);
 	*pVersion = 1;
 	return STATUS_SUCCESS;
 }
 
 /** Pause VM */
-NTSTATUS EVhdSaveDisk(ParserInstance *parser, PVOID data, ULONG32 size, ULONG32 *dataStored)
+NTSTATUS EVhd_SaveDisk(PVOID pContext, PVOID data, ULONG32 size, ULONG32 *dataStored)
 {
+    TRACE_FUNCTION_IN();
+    NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 	ULONG32 dwSize = parser->dwDiskSaveSize + sizeof(PARSER_STATE);
-	if (dwSize < parser->dwDiskSaveSize)
-		return STATUS_INTEGER_OVERFLOW;
-	if (dwSize > size)
-		return STATUS_BUFFER_TOO_SMALL;
-	parser->Io.pfnSaveData(parser->Io.pIoInterface, (UCHAR *)data + sizeof(PARSER_STATE), parser->dwDiskSaveSize);
-	*dataStored = dwSize;
-	return STATUS_SUCCESS;
+    if (dwSize < parser->dwDiskSaveSize) {
+        status = STATUS_INTEGER_OVERFLOW;
+    }
+    else if (dwSize > size) {
+        status = STATUS_BUFFER_TOO_SMALL;
+    }
+    else {
+        parser->Io.pfnSaveData(parser->Io.pIoInterface, (UCHAR *)data + sizeof(PARSER_STATE), parser->dwDiskSaveSize);
+        *dataStored = dwSize;
+    }
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
 /** Resume VM */
-NTSTATUS EVhdRestoreDisk(ParserInstance *parser, INT revision, PVOID data, ULONG32 size)
+NTSTATUS EVhd_RestoreDisk(PVOID pContext, INT revision, PVOID data, ULONG32 size)
 {
-	if (revision != 1)	 // Assigned by IOCTL_VIRTUAL_DISK_SET_SAVE_VERSION
-		return STATUS_REVISION_MISMATCH;
-	ULONG32 dwSize = parser->dwDiskSaveSize + sizeof(PARSER_STATE);
-	if (dwSize < parser->dwDiskSaveSize)
-		return STATUS_INTEGER_OVERFLOW;
-	if (dwSize > size)
-		return STATUS_INVALID_BUFFER_SIZE;
-
-	parser->Io.pfnRestoreData(parser->Io.pIoInterface, (UCHAR *)data + 0x20, parser->dwDiskSaveSize);
-
-	return STATUS_SUCCESS;
+    TRACE_FUNCTION_IN();
+    NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
+    ULONG32 dwSize = parser->dwDiskSaveSize + sizeof(PARSER_STATE);
+    if (revision != 1) {	 // Assigned by IOCTL_VIRTUAL_DISK_SET_SAVE_VERSION
+        status = STATUS_REVISION_MISMATCH;
+    }
+    else if (dwSize < parser->dwDiskSaveSize) {
+        status = STATUS_INTEGER_OVERFLOW;
+    }
+    else if (dwSize > size) {
+        status = STATUS_INVALID_BUFFER_SIZE;
+    }
+    else {
+        status = parser->Io.pfnRestoreData(parser->Io.pIoInterface, (UCHAR *)data + 0x20, parser->dwDiskSaveSize);
+    }
+    TRACE_FUNCTION_OUT_STATUS(status);
+	return status;
 }
 
-NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour)
+NTSTATUS EVhd_SetBehaviourDisk(PVOID pContext, INT behaviour)
 {
+    TRACE_FUNCTION_IN();
+    NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 	INT IoControl;
 	if (behaviour == 1)
 		IoControl = IOCTL_STORAGE_VHD_ISO_EJECT_MEDIA;
@@ -886,23 +952,34 @@ NTSTATUS EVhdSetBehaviourDisk(ParserInstance *parser, INT behaviour)
 	else
 		return STATUS_INVALID_DEVICE_REQUEST;
 
-	return SynchronouseCall(parser->pVhdmpFileObject, IoControl, NULL, 0, NULL, 0);
+	status = SynchronouseCall(parser->pVhdmpFileObject, IoControl, NULL, 0, NULL, 0);
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
 /** Set Qos interface configuration */
-NTSTATUS EVhdSetQosConfigurationDisk(ParserInstance *parser, PVOID pConfig)
+NTSTATUS EVhd_SetQosConfigurationDisk(PVOID pContext, PVOID pConfig)
 {
+    TRACE_FUNCTION_IN();
+    NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 	if (parser->Qos.pfnSetQosConfiguration)
-		return parser->Qos.pfnSetQosConfiguration(parser->Qos.pQosInterface, pConfig);
+		status = parser->Qos.pfnSetQosConfiguration(parser->Qos.pQosInterface, pConfig);
 	else
-		return STATUS_INVALID_DEVICE_REQUEST;
+		status = STATUS_INVALID_DEVICE_REQUEST;
+    TRACE_FUNCTION_OUT_STATUS(status);
+    return status;
 }
 
 /** Unimplemented on R2 */
-NTSTATUS EVhdGetQosInformationDisk(ParserInstance *parser, PVOID pInfo)
+NTSTATUS EVhd_GetQosInformationDisk(PVOID pContext, PVOID pInfo)
 {
+    TRACE_FUNCTION_IN();
+    NTSTATUS status = STATUS_SUCCESS;
+    ParserInstance *parser = pContext;
 	if (parser->Qos.pfnGetQosInformation)
-		return parser->Qos.pfnGetQosInformation(parser->Qos.pQosInterface, pInfo);
+		status = parser->Qos.pfnGetQosInformation(parser->Qos.pQosInterface, pInfo);
 	else
-		return STATUS_INVALID_DEVICE_REQUEST;
+		status = STATUS_INVALID_DEVICE_REQUEST;
+    return status;
 }
