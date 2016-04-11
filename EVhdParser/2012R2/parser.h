@@ -40,7 +40,7 @@ VOID EVhd_CloseDisk(PVOID pContext);
 NTSTATUS EVhd_MountDisk(PVOID pContext, UCHAR flags1, PARSER_MOUNT_INFO *mountInfo);
 NTSTATUS EVhd_DismountDisk(PVOID pContext);
 NTSTATUS EVhd_QueryMountStatusDisk(PVOID pContext);
-NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest);
+NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket);
 NTSTATUS EVhd_QueryInformationDisk(PVOID pContext, EDiskInfoType type, INT unused1, INT unused2, PVOID pBuffer, INT *pBufferSize);
 NTSTATUS EVhd_QuerySaveVersionDisk(PVOID pContext, INT *pVersion);
 NTSTATUS EVhd_SaveDisk(PVOID pContext, PVOID data, ULONG32 size, ULONG32 *dataStored);

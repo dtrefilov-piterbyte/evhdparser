@@ -215,26 +215,26 @@ static NTSTATUS EVhd_UnregisterQosInterface(ParserInstance *parser)
 	return status;
 }
 
-static void EVhd_PostProcessScsiPacket(SCSI_REQUEST *pRequest, NTSTATUS status)
+static void EVhd_PostProcessScsiPacket(SCSI_PACKET *pPacket, NTSTATUS status)
 {
-    pRequest->pVscRequest->SrbStatus = pRequest->pVspRequest->Srb.SrbStatus;
-    pRequest->pVscRequest->ScsiStatus = pRequest->pVspRequest->Srb.ScsiStatus;
-    pRequest->pVscRequest->SenseInfoBufferLength = pRequest->pVspRequest->Srb.SenseInfoBufferLength;
-    pRequest->pVscRequest->DataTransferLength = pRequest->pVspRequest->Srb.DataTransferLength;
+    pPacket->pVscRequest->SrbStatus = pPacket->pVspRequest->Srb.SrbStatus;
+    pPacket->pVscRequest->ScsiStatus = pPacket->pVspRequest->Srb.ScsiStatus;
+    pPacket->pVscRequest->SenseInfoBufferLength = pPacket->pVspRequest->Srb.SenseInfoBufferLength;
+    pPacket->pVscRequest->DataTransferLength = pPacket->pVspRequest->Srb.DataTransferLength;
 	if (!NT_SUCCESS(status))
 	{
-        if (SRB_STATUS_SUCCESS != pRequest->pVspRequest->Srb.SrbStatus)
-            pRequest->pVscRequest->SrbStatus = SRB_STATUS_ERROR;
+        if (SRB_STATUS_SUCCESS != pPacket->pVspRequest->Srb.SrbStatus)
+            pPacket->pVscRequest->SrbStatus = SRB_STATUS_ERROR;
 	}
 	else
 	{
-        USHORT wNumSectors = RtlUshortByteSwap(*(USHORT *)&(pRequest->pVspRequest->Srb.Cdb[7]));
-        ULONG dwStartingSector = RtlUlongByteSwap(*(ULONG *)&(pRequest->pVspRequest->Srb.Cdb[2]));
-        ParserInstance *pParser = pRequest->pVspRequest->pContext;
-        switch (pRequest->pVspRequest->Srb.Cdb[0])
+        USHORT wNumSectors = RtlUshortByteSwap(*(USHORT *)&(pPacket->pVspRequest->Srb.Cdb[7]));
+        ULONG dwStartingSector = RtlUlongByteSwap(*(ULONG *)&(pPacket->pVspRequest->Srb.Cdb[2]));
+        ParserInstance *pParser = pPacket->pVspRequest->pContext;
+        switch (pPacket->pVspRequest->Srb.Cdb[0])
 		{
 		case SCSI_OP_CODE_INQUIRY:
-            pRequest->pVscRequest->bFlags |= 1;
+            pPacket->pVscRequest->bReserved |= 1;
 			break;
 		case SCSI_OP_CODE_READ_6:
 		case SCSI_OP_CODE_READ_10:
@@ -244,8 +244,8 @@ static void EVhd_PostProcessScsiPacket(SCSI_REQUEST *pRequest, NTSTATUS status)
 			{
                 LOG_PARSER(LL_VERBOSE, "Read request complete: %X blocks starting from %X\n",
 					wNumSectors, dwStartingSector);
-                EVhd_CryptBlocks(pParser, pRequest->pMdl, pRequest->pMdl,
-                    pRequest->pVspRequest->Srb.DataTransferLength, FALSE);
+                EVhd_CryptBlocks(pParser, pPacket->pMdl, pPacket->pMdl,
+                    pPacket->pVspRequest->Srb.DataTransferLength, FALSE);
 			}
 			break;
 		case SCSI_OP_CODE_WRITE_6:
@@ -257,7 +257,7 @@ static void EVhd_PostProcessScsiPacket(SCSI_REQUEST *pRequest, NTSTATUS status)
                 LOG_PARSER(LL_VERBOSE, "Write request complete: %X blocks starting from %X\n",
 					wNumSectors, dwStartingSector);
 
-                pRequest->pMdl = EVhd_FreeInnerMdl(pRequest->pMdl);
+                pPacket->pMdl = EVhd_FreeInnerMdl(pPacket->pMdl);
 			}
 			break;
 		}
@@ -265,12 +265,12 @@ static void EVhd_PostProcessScsiPacket(SCSI_REQUEST *pRequest, NTSTATUS status)
 	}
 }
 
-NTSTATUS EVhd_CompleteScsiRequest(SCSI_REQUEST *pRequest, NTSTATUS VspStatus)
+NTSTATUS EVhd_CompleteScsiRequest(SCSI_PACKET *pPacket, NTSTATUS VspStatus)
 {
     NTSTATUS status;
     TRACE_FUNCTION_IN();
-    EVhd_PostProcessScsiPacket(pRequest, VspStatus);
-	status = VstorCompleteScsiRequest(pRequest);
+    EVhd_PostProcessScsiPacket(pPacket, VspStatus);
+    status = VstorCompleteScsiRequest(pPacket);
     TRACE_FUNCTION_OUT_STATUS(status);
     return status;
 }
@@ -297,31 +297,10 @@ static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN f
     TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 
-#pragma pack(push, 1)
-	typedef struct{
-		INT dwVersion;
-		INT dwFlags;
-		UCHAR Unused[12];
-		USHORT wFlags;
-		USHORT wFlags2;
-		CompleteScsiRequest_t pfnCompleteScsiRequest;
-		SendMediaNotification_t pfnSendMediaNotification;
-		SendNotification_t pfnSendNotification;
-		void *pVstorInterface;
-	} RegisterIoRequest;
-
-	typedef struct {
-		INT dwDiskSaveSize;
-		INT dwExtensionBufferSize;
-		PARSER_IO_INFO Io;
-	} RegisterIoResponse;
-
-#pragma pack(pop)
-
 	if (!parser->bIoRegistered)
 	{
-		RegisterIoRequest request = { 0 };
-		RegisterIoResponse response = { 0 };
+		REGISTER_IO_REQUEST request = { 0 };
+		REGISTER_IO_RESPONSE response = { 0 };
 		SCSI_ADDRESS scsiAddressResponse = { 0 };
 
 		request.dwVersion = 1;
@@ -333,8 +312,8 @@ static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN f
 		request.pfnSendNotification = &EVhd_SendNotification;
 		request.pVstorInterface = parser->pVstorInterface;
 
-		status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REGISTER_IO, &request, sizeof(RegisterIoRequest),
-			&response, sizeof(RegisterIoResponse));
+        status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_REGISTER_IO, &request, sizeof(REGISTER_IO_REQUEST),
+            &response, sizeof(REGISTER_IO_RESPONSE));
 
 		if (!NT_SUCCESS(status))
 		{
@@ -580,14 +559,14 @@ NTSTATUS EVhd_QueryMountStatusDisk(PVOID pContext)
 }
 
 /** Scsi request filter function */
-NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
+NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
 {
     //TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
     ParserInstance *parser = pContext;
-	STORVSP_REQUEST *pVspRequest = pRequest->pVspRequest;
-    STORVSC_REQUEST *pVscRequest = pRequest->pVscRequest;
-	PMDL pMdl = pRequest->pMdl;
+    STORVSP_REQUEST *pVspRequest = pPacket->pVspRequest;
+    STORVSC_REQUEST *pVscRequest = pPacket->pVscRequest;
+    PMDL pMdl = pPacket->pMdl;
     SCSI_OP_CODE opCode = (UCHAR)pVscRequest->Sense.Cdb6.OpCode;
 	memset(&pVspRequest->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
 	pVspRequest->pContext = pContext;
@@ -599,7 +578,7 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
 	pVspRequest->Srb.Lun = parser->ScsiLun;
     pVspRequest->Srb.CdbLength = pVscRequest->CdbLength;
     pVspRequest->Srb.SenseInfoBufferLength = pVscRequest->SenseInfoBufferLength;
-    switch (pVscRequest->bType) {
+    switch (pVscRequest->bDataIn) {
     case READ_TYPE:
         pVspRequest->Srb.SrbFlags = SRB_FLAGS_DATA_IN;
         break;
@@ -607,14 +586,14 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
         pVspRequest->Srb.SrbFlags = SRB_FLAGS_DATA_OUT;
     }
     pVspRequest->Srb.DataTransferLength = pVscRequest->DataTransferLength;
-    pVspRequest->Srb.SrbFlags |= pVscRequest->SrbFlags & 8000;			  // Non-standard
+    pVspRequest->Srb.SrbFlags |= pVscRequest->Extension.SrbFlags & 8000;			  // Non-standard
 	pVspRequest->Srb.SrbExtension = pVspRequest + 1;	// variable-length extension right after the inner request block
     pVspRequest->Srb.SenseInfoBuffer = &pVscRequest->Sense;
     memmove(pVspRequest->Srb.Cdb, &pVscRequest->Sense, pVscRequest->CdbLength);
 	if (parser->pCipherCtx)
-        LOG_PARSER(LL_VERBOSE, "Scsi request: %02X, %02X, %04X\n", opCode, pVscRequest->bType, pVscRequest->DataTransferLength);
-	USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pRequest->pVspRequest->Srb.Cdb[7]));
-	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pRequest->pVspRequest->Srb.Cdb[2]));
+        LOG_PARSER(LL_VERBOSE, "Scsi request: %02X, %02X, %04X\n", opCode, pVscRequest->bDataIn, pVscRequest->DataTransferLength);
+    USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pVspRequest->Srb.Cdb[7]));
+	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pVspRequest->Srb.Cdb[2]));
 	switch (opCode)
 	{
 	default:
@@ -637,11 +616,11 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
 		{
             LOG_PARSER(LL_VERBOSE, "Write request: %X blocks starting from %X\n", wBlocks, dwBlockOffset);
 
-			pRequest->pMdl = EVhd_AllocateInnerMdl(pMdl);
+            pPacket->pMdl = EVhd_AllocateInnerMdl(pMdl);
 
-            status = EVhd_CryptBlocks(parser, pMdl, pRequest->pMdl, pVscRequest->DataTransferLength, TRUE);
+            status = EVhd_CryptBlocks(parser, pMdl, pPacket->pMdl, pVscRequest->DataTransferLength, TRUE);
 
-			pMdl = pRequest->pMdl;
+            pMdl = pPacket->pMdl;
 
 			if (pMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
 				MmUnmapLockedPages(pMdl->MappedSystemVa, pMdl);
@@ -659,15 +638,15 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_REQUEST *pRequest)
 	}
 	
 	if (NT_SUCCESS(status))
-		status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pRequest, pVspRequest, pMdl, pRequest->bUnkFlag,
-			pRequest->bUseInternalSenseBuffer ? &pRequest->Sense : NULL);
+        status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pVspRequest, pMdl, pPacket->bUnkFlag,
+        pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
 	else
         pVscRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
 
 	if (STATUS_PENDING != status)
 	{
-		EVhd_PostProcessScsiPacket(pRequest, status);
-		status = VstorCompleteScsiRequest(pRequest);
+        EVhd_PostProcessScsiPacket(pPacket, status);
+        status = VstorCompleteScsiRequest(pPacket);
 	}
     //TRACE_FUNCTION_OUT_STATUS(status);
 	
