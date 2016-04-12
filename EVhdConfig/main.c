@@ -5,9 +5,8 @@
 #include "../EVhdParser/Control.h"
 #include <virtdisk.h>
 
-UCHAR rgbTest256Key[32] = {
-	162, 101, 19, 209, 154, 134, 198, 11, 40, 242, 103, 43, 26, 9, 159, 59,
-	207, 158, 169, 51, 159, 155, 93, 122, 252, 74, 104, 90, 192, 0, 60, 38
+UCHAR rgbTest128Key[16] = {
+	162, 101, 19, 209, 154, 134, 198, 11, 40, 242, 103, 43, 26, 9, 159, 59
 };
 
 DWORD SyncrhonousDeviceIoControl(HANDLE hDevice, DWORD dwControlCode, LPVOID lpInBuffer,
@@ -155,13 +154,18 @@ int _tmain(int argc, _TCHAR* argv[])
 		FILE_FLAG_OVERLAPPED, NULL);
 	if (hDevice != INVALID_HANDLE_VALUE)
 	{
-		EVhdVirtualDiskCipherConfigRequest request = {
-			.DiskId = vhdId,
-			.Algorithm = ECipherAlgo_Gost89
-		};
-		request.Opts.Gost89.OperationMode = OperationMode_CFB;
-		request.Opts.Gost89.SBlock = ESBlock_tc26_gost28147_param_Z;
-		memcpy(request.Opts.Gost89.Key, rgbTest256Key, sizeof(request.Opts.Gost89.Key));
+		//EVHD_SET_CIPHER_CONFIG_REQUEST request = {
+		//	.DiskId = vhdId,
+		//	.Algorithm = ECipherAlgo_AES128
+		//};
+		//request.Opts.Aes128.OperationMode = OperationMode_CFB;
+        //memcpy(request.Opts.Aes128.Key, rgbTest128Key, sizeof(request.Opts.Aes128.Key));
+
+        EVHD_SET_CIPHER_CONFIG_REQUEST request = {
+            .DiskId = vhdId,
+            .Algorithm = ECipherAlgo_Xor
+        };
+        request.Opts.Xor.XorMixingValue = 0xCCCCCCCC;
 
 		if (ERROR_SUCCESS != (dwError = SyncrhonousDeviceIoControl(hDevice,
 			IOCTL_VIRTUAL_DISK_SET_CIPHER, &request, sizeof(request), NULL, 0, NULL)))

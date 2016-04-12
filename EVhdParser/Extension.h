@@ -1,29 +1,27 @@
 #pragma once  
-#include <ntifs.h>
 #include <srb.h>
-#include <scsi.h>
-#include <ntddscsi.h>
 
 typedef struct _EVHD_EXT_CAPABILITIES {
 	SIZE_T StateSize;
 } EVHD_EXT_CAPABILITIES, *PEVHD_EXT_CAPABILITIES;
 
 typedef struct _EVHD_EXT_SCSI_PACKET {
-	/* Raw SCSI request command buffer */
+	/* Raw SCSI request command buffer pointer */
 	PSCSI_REQUEST_BLOCK Srb;
 	/* Pointer to the data buffer for READ and WRITER requests.
 	* For write requests the buffer is immutable, changing it's contents leads to the undefined behaviour
 	*/
 	PMDL pMdl;
-	/* Pointer to the any user-defined data corresponding to the given request */
-	PVOID pUserData;
+    /** Pointer to the sense buffer
+    */
+    PVOID pSenseBuffer;
 } EVHD_EXT_SCSI_PACKET, *PEVHD_EXT_SCSI_PACKET;
 
 #define EVHD_MOUNT_FLAG_SHARED_ACCESS
 
-NTSTATUS EVhdExtInitialize(_Out_ PEVHD_EXT_CAPABILITIES pCaps);
+NTSTATUS Ext_Initialize(_Out_ PEVHD_EXT_CAPABILITIES pCaps);
 
-NTSTATUS EVhdExtFinalize();
+NTSTATUS Ext_Cleanup();
 
 /**
 
@@ -33,11 +31,16 @@ NTSTATUS EVhdExtFinalize();
 	This function is called when storage VSP opens a virtual disk
  Arguments:
 	DiskPath - Filesystem path to the virtual disk being opened (VHD, VHDX, ISO)
+    DiskId - Page83 storage identifier
 	ApplicationId - ID of the application requesting this disk (VmID in a case of disk being plugged to the virtual IDE/SCSI controller)
 	DiskContext - Extension context specific to the given virtual disk. This context
 	 is passed back to the EVhdExt function calls
 */
-NTSTATUS EVhdExtCreate(_In_ PCUNICODE_STRING DiskPath, PGUID ApplicationId, _Outptr_opt_result_maybenull_ PVOID *DiskContext);
+NTSTATUS Ext_Create(_In_ PCUNICODE_STRING DiskPath,
+    _In_ PGUID ApplicationId,
+    _In_ EDiskFormat DiskFormat,
+    _In_ PGUID DiskId,
+    _Outptr_opt_result_maybenull_ PVOID *DiskContext);
 
 /**
 
@@ -49,7 +52,7 @@ NTSTATUS EVhdExtCreate(_In_ PCUNICODE_STRING DiskPath, PGUID ApplicationId, _Out
  Arguments:
 	DiskContext - The extension context allocated in EVhdExtCreate
 */
-NTSTATUS EVhdExtDelete(_In_ PVOID DiskContext);
+NTSTATUS Ext_Delete(_In_ PVOID DiskContext);
 
 /**
 
@@ -62,17 +65,17 @@ NTSTATUS EVhdExtDelete(_In_ PVOID DiskContext);
 	DiskContext - The extension context allocated in EVhdExtCreate
 	MountFlags - combination of known flags
 */
-NTSTATUS EVhdExtMount(_In_ PVOID ExtContext, _In_ INT MountFlags);
+NTSTATUS Ext_Mount(_In_ PVOID ExtContext, _In_ INT MountFlags);
 
 /**
 
- EVhdExtDismount
+ EVhdExtUnmount
 
  Routine Description:
 	This function is called when storage VSP unmounts disk to free all IO-releated resources
 	and unblock access to the disk
 */
-NTSTATUS EVhdExtDismount(_In_ PVOID ExtContext);
+NTSTATUS Ext_Unmount(_In_ PVOID ExtContext);
 
 /**
 
@@ -82,16 +85,16 @@ NTSTATUS EVhdExtDismount(_In_ PVOID ExtContext);
 	This function is called when storage VSP suspends and current stores disk state to the media
 	(for example during migration)
 */
-NTSTATUS EVhdExtPause(_In_ PVOID ExtContext, _In_ PVOID SaveBuffer, _Inout_ SIZE_T *SaveBufferSize);
+NTSTATUS Ext_Pause(_In_ PVOID ExtContext, _In_ PVOID SaveBuffer, _Inout_ SIZE_T *SaveBufferSize);
 
 /**
 
- EVhdExtResume
+ EVhdExtRestore
 
  Routine Description:
 	This function is called to restore previosly saved state by EVhdExtPause
 */
-NTSTATUS EVhdExtResume(_In_ PVOID ExtContext, PVOID RestoreBuffer, SIZE_T RestoreBufferSize);
+NTSTATUS Ext_Restore(_In_ PVOID ExtContext, PVOID RestoreBuffer, SIZE_T RestoreBufferSize);
 
 /**
  EVhdExtStartScsiRequest
@@ -99,7 +102,7 @@ NTSTATUS EVhdExtResume(_In_ PVOID ExtContext, PVOID RestoreBuffer, SIZE_T Restor
  Routine Description:
 	This function is called to filter all SCSI commands
 */
-NTSTATUS EVhdExtStartScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET pExtPacket);
+NTSTATUS Ext_StartScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET pExtPacket);
 
 /**
  EVhdExtCompleteScsiRequest
@@ -107,4 +110,4 @@ NTSTATUS EVhdExtStartScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACK
  Routine Description:
 	 	
 */
-NTSTATUS EVhdExtCompleteScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET pExtPacket, _In_ NTSTATUS Status);
+NTSTATUS Ext_CompleteScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET pExtPacket, _In_ NTSTATUS Status);

@@ -15,21 +15,20 @@ typedef struct
 	{
 		XorCipherOptions Xor;
 		Aes128CipherOptions Aes128;
-		Gost89CipherOptions Gost89;
 		UCHAR Reserved[0x100];
 	} Opts;
-} EVhdVirtualDiskCipherConfigRequest;
+} EVHD_SET_CIPHER_CONFIG_REQUEST;
 
 typedef struct
 {
 	GUID DiskId;
-} EVhdVirtualDiskCipherInfoRequest;
+} EVHD_QUERY_CIPHER_CONFIG_REQUEST;
 
 typedef struct
 {
 	GUID DiskId;
 	ECipherAlgo Algorithm;
-} EVhdVirtualDiskCipherInfoResponse;
+} EVHD_QUERY_CIPHER_CONFIG_RESPONSE;
 
 typedef struct _LOG_SETTINGS {
     ULONG32 LogLevel;

@@ -2,7 +2,6 @@
 #include "cipher.h"
 #include "XorCipher.h"
 #include "AesCipher.h"
-#include "Gost89Cipher.h"
 
 const ULONG CipherPoolTag = 'CPHp';
 
@@ -15,7 +14,6 @@ typedef struct _CipherOptsEntry
 	{
 		XorCipherOptions Xor;
 		Aes128CipherOptions Aes128;
-		Gost89CipherOptions Gost89;
 	} Opts;
 } CipherOptsEntry;
 
@@ -47,9 +45,6 @@ NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *
 			break;
 		case ECipherAlgo_AES128:
 			engine = &Aes128CipherEngine;
-			break;
-		case ECipherAlgo_Gost89:
-			engine = &Gost89CipherEngine;
 			break;
 		}
 
@@ -92,7 +87,6 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 	case ECipherAlgo_Disabled:
 	case ECipherAlgo_Xor:
 	case ECipherAlgo_AES128:
-	case ECipherAlgo_Gost89:
 		// Try find existing opts in a list
 		for (pOptsNode = g_pCipherOptsHead; pOptsNode; pOptsNode = pOptsNode->Next)
 		{
@@ -123,9 +117,6 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 			{
 			case ECipherAlgo_AES128:
 				memcpy(&pThisNode->Opts.Aes128, pCipherOpts, sizeof(Aes128CipherOptions));
-				break;
-			case ECipherAlgo_Gost89:
-				memcpy(&pThisNode->Opts.Gost89, pCipherOpts, sizeof(Gost89CipherOptions));
 				break;
 			case ECipherAlgo_Xor:
 				memcpy(&pThisNode->Opts.Xor, pCipherOpts, sizeof(XorCipherOptions));

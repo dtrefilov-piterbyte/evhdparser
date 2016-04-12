@@ -120,7 +120,7 @@ VOID DPT_Cleanup()
 {
 	TRACE_FUNCTION_IN();
 
-	while (IsListEmpty(&DptSubscriptions))
+	while (!IsListEmpty(&DptSubscriptions))
     {
         PLIST_ENTRY pEntry = DptSubscriptions.Flink;
 
@@ -155,7 +155,7 @@ VOID DPT_QueueMessage(_In_ PARSER_MESSAGE *pMessage)
 	for (pEntry = DptSubscriptions.Flink; pEntry != &DptSubscriptions; pEntry = pEntry->Flink)
 	{
 		AUDIT_SUBSCRIPTION_CONTEXT *pContext = (AUDIT_SUBSCRIPTION_CONTEXT *)pEntry;
-		// if was not able to send message immediatelly, put it in a queue
+		// if was not able to send message immediatelly, put it in the queue
 		if (!DPT_SendMessage(pContext, pMessage))
 		{
 			DPTLOG(LL_VERBOSE, "Queueing message to subscription context %p", pContext);
@@ -400,7 +400,7 @@ static NTSTATUS DPT_Write(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 	NTSTATUS Status = STATUS_SUCCESS;
 	TRACE_FUNCTION_IN();
 
-	Status = STATUS_ACCESS_DENIED;
+	Status = STATUS_INVALID_DEVICE_REQUEST;
 
 	TRACE_FUNCTION_OUT_STATUS(Status);
 
@@ -450,10 +450,10 @@ static NTSTATUS DPT_Control(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
     {
     case IOCTL_VIRTUAL_DISK_SET_CIPHER:
-        if (sizeof(EVhdVirtualDiskCipherConfigRequest) ==
+        if (sizeof(EVHD_SET_CIPHER_CONFIG_REQUEST) ==
             IrpSp->Parameters.DeviceIoControl.InputBufferLength)
         {
-            EVhdVirtualDiskCipherConfigRequest *request = pIrp->AssociatedIrp.SystemBuffer;
+            EVHD_SET_CIPHER_CONFIG_REQUEST *request = pIrp->AssociatedIrp.SystemBuffer;
             IoStatus = SetCipherOpts(&request->DiskId, request->Algorithm, &request->Opts);
         }
         else

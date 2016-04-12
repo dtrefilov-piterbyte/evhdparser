@@ -261,7 +261,7 @@
     <ClCompile Include="AesCipher.c" />
     <ClCompile Include="cipher.c" />
     <ClCompile Include="Dispatch.c" />
-    <ClCompile Include="Gost89Cipher.c" />
+    <ClCompile Include="Extension.c" />
     <ClCompile Include="Log.c" />
     <ClCompile Include="RegUtils.c" />
     <ClCompile Include="stdafx.c">
@@ -331,8 +331,7 @@
     <ClInclude Include="CipherOpts.h" />
     <ClInclude Include="Control.h" />
     <ClInclude Include="Dispatch.h" />
-    <ClInclude Include="ExtIface.h" />
-    <ClInclude Include="Gost89Cipher.h" />
+    <ClInclude Include="Extension.h" />
     <ClInclude Include="Guids.h" />
     <ClInclude Include="Ioctl.h" />
     <ClInclude Include="Log.h" />

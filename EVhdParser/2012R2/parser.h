@@ -30,8 +30,7 @@ typedef struct _ParserInstance {
 	INT				dwInnerBufferSize;
 	PIRP			pIrp;
 	ULONG_PTR		IoLock;
-	PVOID			pCipherCtx;
-	CipherEngine	*pCipherEngine;
+    PVOID           pExtension;
 } ParserInstance;
 
 /** Forward declaration of parser handler */

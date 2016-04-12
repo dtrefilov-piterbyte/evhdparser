@@ -2,21 +2,17 @@
 #include "parser.h"
 #include "Ioctl.h"
 #include "utils.h"
-//#include <ntddscsi.h>
-#include <fltKernel.h>
 #include "Vdrvroot.h"
 #include "Guids.h"
-#include "Gost89Cipher.h"
 #include "Log.h"
-
+#include "Extension.h"
 
 #define LOG_PARSER(level, format, ...) LOG_FUNCTION(level, LOG_CTG_PARSER, format, __VA_ARGS__)
 
 static const ULONG EvhdPoolTag = 'VVpp';
 
-static NTSTATUS EVhd_InitCipher(ParserInstance *parser, PCUNICODE_STRING diskPath)
+static NTSTATUS EVhd_InitializeExtension(ParserInstance *parser, PGUID applicationId, PCUNICODE_STRING diskPath)
 {
-	UNREFERENCED_PARAMETER(diskPath);
 	NTSTATUS status = STATUS_SUCCESS;
 	DiskInfoResponse Response = { 0 };
 	EDiskInfoType Request = EDiskInfoType_ParserInfo;
@@ -30,12 +26,6 @@ static NTSTATUS EVhd_InitCipher(ParserInstance *parser, PCUNICODE_STRING diskPat
 	}
 	DiskFormat = Response.vals[0].dwLow;
 
-	// IsoParser is not supported
-	if (EDiskFormat_Vhd != DiskFormat && EDiskFormat_Vhdx != DiskFormat)
-	{
-		return status;
-	}
-
 	Request = EDiskInfoType_Page83Data;
 	status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
 		&Response, sizeof(DiskInfoResponse));
@@ -44,97 +34,17 @@ static NTSTATUS EVhd_InitCipher(ParserInstance *parser, PCUNICODE_STRING diskPat
         LOG_PARSER(LL_FATAL, "Failed to retreive virtual disk identifier. 0x%0X\n", status);
 		return status;
 	}
-	status = CipherEngineGet(&Response.guid, &parser->pCipherEngine, &parser->pCipherCtx);
+    status = Ext_Create(diskPath, applicationId, DiskFormat, &Response.guid, &parser->pExtension);
 	return status;
 }
 
-static NTSTATUS EVhd_FinalizeCipher(ParserInstance *parser)
+static NTSTATUS EVhd_FinalizeExtension(ParserInstance *parser)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	if (parser->pCipherCtx)
+	if (parser->pExtension)
 	{
-		status = parser->pCipherEngine->pfnDestroy(parser->pCipherCtx);
-		if (NT_SUCCESS(status))
-			parser->pCipherCtx = NULL;
+        status = Ext_Delete(parser->pExtension);
 	}
-	return status;
-}
-
-static PMDL EVhd_AllocateInnerMdl(PMDL pSourceMdl)
-{
-	PHYSICAL_ADDRESS LowAddress, HighAddress, SkipBytes;
-	LowAddress.QuadPart = 0;
-	HighAddress.QuadPart = 0xFFFFFFFFFFFFFFFF;
-	SkipBytes.QuadPart = 0;
-
-	PMDL pNewMdl = MmAllocatePagesForMdlEx(LowAddress, HighAddress, SkipBytes, pSourceMdl->ByteCount, MmCached, MM_DONT_ZERO_ALLOCATION);
-	pNewMdl->Next = pSourceMdl;
-
-	return pNewMdl;
-}
-
-static PMDL EVhd_FreeInnerMdl(PMDL pMdl)
-{
-	PMDL pSourceMdl = pMdl->Next;
-	pMdl->Next = NULL;
-	MmFreePagesFromMdl(pMdl);
-	return pSourceMdl;
-}
-
-static NTSTATUS EVhd_CryptBlocks(ParserInstance *parser, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, BOOLEAN Encrypt)
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
-	PVOID pSource = NULL, pTarget = NULL;
-	// TODO: use sector size from vhdmp
-	CONST SIZE_T SectorSize = 512;
-	SIZE_T SectorOffset = 0;
-
-	if (!parser || !pSourceMdl || !pTargetMdl)
-		return STATUS_INVALID_PARAMETER;
-	// have no cipher
-	if (!parser->pCipherCtx)
-		return STATUS_SUCCESS;
-
-	mappedSourceMdl = 0 == (pSourceMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
-
-	pSource = mappedSourceMdl ? MmMapLockedPagesSpecifyCache(pSourceMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
-		: pSourceMdl->MappedSystemVa;
-	if (!pSource)
-		return STATUS_INSUFFICIENT_RESOURCES;
-
-	if (pSourceMdl != pTargetMdl)
-	{
-		mappedTargetMdl = 0 == (pTargetMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
-
-		pTarget = mappedTargetMdl ? MmMapLockedPagesSpecifyCache(pTargetMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
-			: pTargetMdl->MappedSystemVa;
-		if (!pTarget)
-			return STATUS_INSUFFICIENT_RESOURCES;
-	}
-	else
-	{
-		pTarget = pSource;
-	}
-
-	ASSERT(0 == size % SectorSize);
-
-    LOG_PARSER(LL_VERBOSE, "VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
-
-	for (SectorOffset = 0; SectorOffset < size; SectorOffset += SectorSize)
-	{
-		PUCHAR pSourceSector = (PUCHAR)pSource + SectorOffset;
-		PUCHAR pTargetSector = (PUCHAR)pTarget + SectorOffset;
-		status = (Encrypt ? parser->pCipherEngine->pfnEncrypt : parser->pCipherEngine->pfnDecrypt)(parser->pCipherCtx, 
-			pSourceSector, pTargetSector, SectorSize);
-		if (!NT_SUCCESS(status))
-			break;
-	}
-
-	if (mappedSourceMdl && pSourceMdl)
-		MmUnmapLockedPages(pSource, pSourceMdl);
-	if (mappedTargetMdl && pTargetMdl)
-		MmUnmapLockedPages(pTarget, pTargetMdl);
 	return status;
 }
 
@@ -170,7 +80,7 @@ static NTSTATUS EVhd_Initialize(HANDLE hFileHandle, PFILE_OBJECT pFileObject, Pa
 
 static VOID EVhd_Finalize(ParserInstance *parser)
 {
-	EVhd_FinalizeCipher(parser);
+	EVhd_FinalizeExtension(parser);
 
 	if (parser->pIrp)
 		IoFreeIrp(parser->pIrp);
@@ -228,41 +138,25 @@ static void EVhd_PostProcessScsiPacket(SCSI_PACKET *pPacket, NTSTATUS status)
 	}
 	else
 	{
-        USHORT wNumSectors = RtlUshortByteSwap(*(USHORT *)&(pPacket->pVspRequest->Srb.Cdb[7]));
-        ULONG dwStartingSector = RtlUlongByteSwap(*(ULONG *)&(pPacket->pVspRequest->Srb.Cdb[2]));
-        ParserInstance *pParser = pPacket->pVspRequest->pContext;
         switch (pPacket->pVspRequest->Srb.Cdb[0])
-		{
-		case SCSI_OP_CODE_INQUIRY:
+        {
+        case SCSI_OP_CODE_INQUIRY:
             pPacket->pVscRequest->bReserved |= 1;
-			break;
-		case SCSI_OP_CODE_READ_6:
-		case SCSI_OP_CODE_READ_10:
-		case SCSI_OP_CODE_READ_12:
-		case SCSI_OP_CODE_READ_16:
-            if (pParser->pCipherCtx)
-			{
-                LOG_PARSER(LL_VERBOSE, "Read request complete: %X blocks starting from %X\n",
-					wNumSectors, dwStartingSector);
-                EVhd_CryptBlocks(pParser, pPacket->pMdl, pPacket->pMdl,
-                    pPacket->pVspRequest->Srb.DataTransferLength, FALSE);
-			}
-			break;
-		case SCSI_OP_CODE_WRITE_6:
-		case SCSI_OP_CODE_WRITE_10:
-		case SCSI_OP_CODE_WRITE_12:
-		case SCSI_OP_CODE_WRITE_16:
-            if (pParser->pCipherCtx)
-			{
-                LOG_PARSER(LL_VERBOSE, "Write request complete: %X blocks starting from %X\n",
-					wNumSectors, dwStartingSector);
-
-                pPacket->pMdl = EVhd_FreeInnerMdl(pPacket->pMdl);
-			}
-			break;
-		}
-
+            break;
+        }
 	}
+
+    ParserInstance *pParser = pPacket->pVspRequest->pContext;
+    if (pParser->pExtension) {
+        EVHD_EXT_SCSI_PACKET ExtPacket;
+        ExtPacket.pMdl = pPacket->pMdl;
+        ExtPacket.pSenseBuffer = &pPacket->Sense;
+        ExtPacket.Srb = &pPacket->pVspRequest->Srb;
+        status = Ext_CompleteScsiRequest(pParser->pExtension, &ExtPacket, status);
+        if (NT_SUCCESS(status)) {
+            pPacket->pMdl = ExtPacket.pMdl;
+        }
+    }
 }
 
 NTSTATUS EVhd_CompleteScsiRequest(SCSI_PACKET *pPacket, NTSTATUS VspStatus)
@@ -456,7 +350,7 @@ NTSTATUS EVhd_OpenDisk(PCUNICODE_STRING diskPath, ULONG32 OpenFlags, GUID *pVmId
 
 	parser->pVstorInterface = vstorInterface;
 
-	status = EVhd_InitCipher(parser, diskPath);
+	status = EVhd_InitializeExtension(parser, pVmId, diskPath);
 	if (!NT_SUCCESS(status))
 	{
         LOG_PARSER(LL_ERROR, "EvhdInitCipher failed with error 0x%08X\n", status);
@@ -567,7 +461,6 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
     STORVSP_REQUEST *pVspRequest = pPacket->pVspRequest;
     STORVSC_REQUEST *pVscRequest = pPacket->pVscRequest;
     PMDL pMdl = pPacket->pMdl;
-    SCSI_OP_CODE opCode = (UCHAR)pVscRequest->Sense.Cdb6.OpCode;
 	memset(&pVspRequest->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
 	pVspRequest->pContext = pContext;
 	pVspRequest->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
@@ -590,61 +483,48 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
 	pVspRequest->Srb.SrbExtension = pVspRequest + 1;	// variable-length extension right after the inner request block
     pVspRequest->Srb.SenseInfoBuffer = &pVscRequest->Sense;
     memmove(pVspRequest->Srb.Cdb, &pVscRequest->Sense, pVscRequest->CdbLength);
-	if (parser->pCipherCtx)
-        LOG_PARSER(LL_VERBOSE, "Scsi request: %02X, %02X, %04X\n", opCode, pVscRequest->bDataIn, pVscRequest->DataTransferLength);
-    USHORT wBlocks = RtlUshortByteSwap(*(USHORT *)&(pVspRequest->Srb.Cdb[7]));
-	ULONG dwBlockOffset = RtlUlongByteSwap(*(ULONG *)&(pVspRequest->Srb.Cdb[2]));
-	switch (opCode)
-	{
-	default:
-		if (pMdl)
-		{
-			pVspRequest->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
-				pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
-			if (!pVspRequest->Srb.DataBuffer)
-			{
-				status = STATUS_INSUFFICIENT_RESOURCES;
-				break;
-			}
-		}
-		break;
-	case SCSI_OP_CODE_WRITE_6:
-	case SCSI_OP_CODE_WRITE_10:
-	case SCSI_OP_CODE_WRITE_12:
-	case SCSI_OP_CODE_WRITE_16:
-		if (parser->pCipherCtx)
-		{
-            LOG_PARSER(LL_VERBOSE, "Write request: %X blocks starting from %X\n", wBlocks, dwBlockOffset);
+    switch (pVspRequest->Srb.Cdb[0])
+    {
+    default:
+        if (pMdl)
+        {
+            pVspRequest->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
+                pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE,
+                NormalPagePriority | MdlMappingNoExecute);
+            if (!pVspRequest->Srb.DataBuffer)
+            {
+                status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+        }
+        break;
+    case SCSI_OP_CODE_WRITE_6:
+    case SCSI_OP_CODE_WRITE_10:
+    case SCSI_OP_CODE_WRITE_12:
+    case SCSI_OP_CODE_WRITE_16:
+    case SCSI_OP_CODE_READ_6:
+    case SCSI_OP_CODE_READ_10:
+    case SCSI_OP_CODE_READ_12:
+    case SCSI_OP_CODE_READ_16:
+        break;
+    }
 
-            pPacket->pMdl = EVhd_AllocateInnerMdl(pMdl);
+    if (NT_SUCCESS(status) && parser->pExtension) {
+        EVHD_EXT_SCSI_PACKET ExtPacket;
+        ExtPacket.pMdl = pPacket->pMdl;
+        ExtPacket.pSenseBuffer = &pPacket->Sense;
+        ExtPacket.Srb = &pVspRequest->Srb;
+        status = Ext_StartScsiRequest(parser->pExtension, &ExtPacket);
+    }
 
-            status = EVhd_CryptBlocks(parser, pMdl, pPacket->pMdl, pVscRequest->DataTransferLength, TRUE);
-
-            pMdl = pPacket->pMdl;
-
-			if (pMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
-				MmUnmapLockedPages(pMdl->MappedSystemVa, pMdl);
-		}
-		break;
-	case SCSI_OP_CODE_READ_6:
-	case SCSI_OP_CODE_READ_10:
-	case SCSI_OP_CODE_READ_12:
-	case SCSI_OP_CODE_READ_16:
-		if (parser->pCipherCtx)
-		{
-            LOG_PARSER(LL_VERBOSE, "Read request: %X blocks starting from %X\n", wBlocks, dwBlockOffset);
-		}
-		break;
-	}
-	
-	if (NT_SUCCESS(status))
+    if (NT_SUCCESS(status)) {
         status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pVspRequest, pMdl, pPacket->bUnkFlag,
-        pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
+            pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
+    }
 	else
         pVscRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
 
-	if (STATUS_PENDING != status)
-	{
+	if (STATUS_PENDING != status) {
         EVhd_PostProcessScsiPacket(pPacket, status);
         status = VstorCompleteScsiRequest(pPacket);
 	}

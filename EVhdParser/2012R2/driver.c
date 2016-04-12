@@ -7,6 +7,7 @@
 #include "Control.h"
 #include "Log.h"
 #include "Dispatch.h"
+#include "Extension.h"
 
 #if 0
 // {860ECCBC-6E7D-4A17-B181-81D64AF02170}
@@ -23,9 +24,9 @@ DEFINE_GUID(GUID_EVHD_PARSER_ID,
 void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 {
 	UNREFERENCED_PARAMETER(pDriverObject);
-    DPT_Cleanup();
-	CipherCleanup();
+    Ext_Cleanup();
     Log_Cleanup();
+    DPT_Cleanup();
 }
 
 /** Default major function dispatcher */
@@ -47,6 +48,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	VSTOR_PARSER_INFO ParserInfo = { 0 };
 	RTL_OSVERSIONINFOW VersionInfo = { 0 };
     PDEVICE_OBJECT pDeviceObject = NULL;
+    EVHD_EXT_CAPABILITIES Caps;
 
 	VersionInfo.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 
@@ -67,13 +69,12 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	}
 
     pDriverObject->DriverUnload = EVhdDriverUnload;
-
-	status = CipherInit();
-	if (!NT_SUCCESS(status))
-	{
-		DbgPrint("Failed to initialize cipher: %X\n", status);
-		return status;
-	}
+    status = Ext_Initialize(&Caps);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("Failed to initialize extension: %X\n", status);
+        return status;
+    }
 
     status = DPT_Initialize(pDriverObject, pRegistryPath, &pDeviceObject);
     if (!NT_SUCCESS(status))
