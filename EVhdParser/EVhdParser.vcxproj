@@ -260,6 +260,7 @@
     </ClCompile>
     <ClCompile Include="AesCipher.c" />
     <ClCompile Include="cipher.c" />
+    <ClCompile Include="Dispatch.c" />
     <ClCompile Include="Gost89Cipher.c" />
     <ClCompile Include="Log.c" />
     <ClCompile Include="RegUtils.c" />
@@ -329,6 +330,7 @@
     <ClInclude Include="cipher.h" />
     <ClInclude Include="CipherOpts.h" />
     <ClInclude Include="Control.h" />
+    <ClInclude Include="Dispatch.h" />
     <ClInclude Include="ExtIface.h" />
     <ClInclude Include="Gost89Cipher.h" />
     <ClInclude Include="Guids.h" />

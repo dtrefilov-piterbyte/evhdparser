@@ -268,10 +268,10 @@ static void EVhd_PostProcessScsiPacket(SCSI_PACKET *pPacket, NTSTATUS status)
 NTSTATUS EVhd_CompleteScsiRequest(SCSI_PACKET *pPacket, NTSTATUS VspStatus)
 {
     NTSTATUS status;
-    TRACE_FUNCTION_IN();
+    //TRACE_FUNCTION_IN();
     EVhd_PostProcessScsiPacket(pPacket, VspStatus);
     status = VstorCompleteScsiRequest(pPacket);
-    TRACE_FUNCTION_OUT_STATUS(status);
+    //TRACE_FUNCTION_OUT_STATUS(status);
     return status;
 }
 

@@ -35,7 +35,7 @@ VOID EVhdCleanup(ParserInstance *parser);
 VOID EVhdGetGeometry(ParserInstance *parser, ULONG32 *pSectorSize, ULONG64 *pDiskSize, ULONG32 *pNumSectors);
 VOID EVhdGetCapabilities(ParserInstance *parser, PPARSER_CAPABILITIES pCapabilities);
 NTSTATUS EVhdMount(ParserInstance *parser, BOOLEAN bMountDismount, BOOLEAN registerIoFlag);
-NTSTATUS EVhdExecuteSrb(SrbPacket *pPacket);
+NTSTATUS EVhdExecuteSrb(SCSI_PACKET *pPacket);
 NTSTATUS EVhdBeginSave(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo);
 NTSTATUS EVhdSaveData(ParserInstance *parser, PVOID pData, ULONG32 *pSize);
 NTSTATUS EVhdBeginRestore(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo);

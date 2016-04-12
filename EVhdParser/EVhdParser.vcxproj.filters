@@ -69,6 +69,9 @@
     <ClCompile Include="stdafx.c">
       <Filter>common</Filter>
     </ClCompile>
+    <ClCompile Include="Dispatch.c">
+      <Filter>common</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="2012R2\driver.h">
@@ -138,6 +141,9 @@
       <Filter>common</Filter>
     </ClInclude>
     <ClInclude Include="stdafx.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="Dispatch.h">
       <Filter>common</Filter>
     </ClInclude>
   </ItemGroup>

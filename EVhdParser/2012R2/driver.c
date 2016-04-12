@@ -6,6 +6,7 @@
 #include "parser.h"
 #include "Control.h"
 #include "Log.h"
+#include "Dispatch.h"
 
 #if 0
 // {860ECCBC-6E7D-4A17-B181-81D64AF02170}
@@ -18,23 +19,11 @@ DEFINE_GUID(GUID_EVHD_PARSER_ID,
 	0xf916c826, 0xf0f5, 0x4cd9, 0xbe, 0x68, 0x4f, 0xd6, 0x38, 0xcf, 0x9a, 0x53);
 #endif
 
-#define DEVICE_NAME L"\\Device\\EVhdParser"
-#define DOSDEVICE_NAME L"\\DosDevices\\EVhdParser"
-
-static PDEVICE_OBJECT pDeviceObject = NULL;
-
 /** Driver unload routine */
 void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 {
 	UNREFERENCED_PARAMETER(pDriverObject);
-	UNICODE_STRING DosDeviceName;
-	RtlInitUnicodeString(&DosDeviceName, DOSDEVICE_NAME);
-	IoDeleteSymbolicLink(&DosDeviceName);
-	if (pDeviceObject)
-	{
-		IoDeleteDevice(pDeviceObject);
-		pDeviceObject = NULL;
-	}
+    DPT_Cleanup();
 	CipherCleanup();
     Log_Cleanup();
 }
@@ -54,11 +43,11 @@ static NTSTATUS DispatchControl(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
-	ULONG ulIndex;
 	NTSTATUS status = STATUS_SUCCESS;
-	VstorParserInfo ParserInfo = { 0 };
+	VSTOR_PARSER_INFO ParserInfo = { 0 };
 	RTL_OSVERSIONINFOW VersionInfo = { 0 };
-	UNICODE_STRING DeviceName, DosDeviceName;
+    PDEVICE_OBJECT pDeviceObject = NULL;
+
 	VersionInfo.dwOSVersionInfoSize = sizeof(RTL_OSVERSIONINFOW);
 
 	UNREFERENCED_PARAMETER(pRegistryPath);
@@ -77,6 +66,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		return status = STATUS_NOT_SUPPORTED;
 	}
 
+    pDriverObject->DriverUnload = EVhdDriverUnload;
+
 	status = CipherInit();
 	if (!NT_SUCCESS(status))
 	{
@@ -84,36 +75,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		return status;
 	}
 
-	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
-	RtlInitUnicodeString(&DosDeviceName, DOSDEVICE_NAME);
+    status = DPT_Initialize(pDriverObject, pRegistryPath, &pDeviceObject);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("Failed to initialize dispatch subsystem: %X\n", status);
+        return status;
+    }
 
-	status = IoCreateDevice(pDriverObject, 0, &DeviceName, FILE_DEVICE_DISK_FILE_SYSTEM, 
-		FILE_DEVICE_SECURE_OPEN, FALSE, &pDeviceObject);
-	if (!NT_SUCCESS(status))
-	{
-		DbgPrint("Failed to create device: %X\n", status);
-		return status;
-	}
-
-	status = IoCreateSymbolicLink(&DosDeviceName, &DeviceName);
-	if (!NT_SUCCESS(status))
-	{
-		DbgPrint("Failed to create dos device link: %X\n", status);
-		return status;
-	}
-
-	for (ulIndex = 0; ulIndex < IRP_MJ_MAXIMUM_FUNCTION; ++ulIndex)
-	{
-		pDriverObject->MajorFunction[ulIndex] = DispatchPassThrough;
-	}
-
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] = DispatchCreate;
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchClose;
-	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchControl;
-
-	pDriverObject->DriverUnload = EVhdDriverUnload;
-
-	ParserInfo.dwSize						= sizeof(VstorParserInfo);
+	ParserInfo.dwSize						= sizeof(VSTOR_PARSER_INFO);
 	ParserInfo.dwVersion					= 1;
 	ParserInfo.ParserId						= GUID_EVHD_PARSER_ID;
 	ParserInfo.pDriverObject				= pDriverObject;
@@ -135,80 +104,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
     status = Log_Initialize(pDeviceObject, pRegistryPath);
     if (!NT_SUCCESS(status))
     {
-        DbgPrint("Log_Initialize failed with error: %d\n", status);
+        DbgPrint("Log_Initialize failed with error: %X\n", status);
         return status;
     }
 
 	status = VstorRegisterParser(&ParserInfo);
 	if (!NT_SUCCESS(status))
 	{
-		LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "VstorRegisterParser failed with error: %d\n", status);
+		LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "VstorRegisterParser failed with error: %X\n", status);
 		return status;
 	}
 
 	return status;
-}
-
-static NTSTATUS DispatchPassThrough(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-static NTSTATUS DispatchCreate(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	DbgPrint("DispatchCreate called\n");
-
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	DbgPrint("DispatchClose called\n");
-
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-static NTSTATUS DispatchControl(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-	NTSTATUS IoStatus = STATUS_SUCCESS;
-
-	PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(pIrp);
-
-	switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
-	{
-	case IOCTL_VIRTUAL_DISK_SET_CIPHER:
-		if (sizeof(EVhdVirtualDiskCipherConfigRequest) ==
-			IrpSp->Parameters.DeviceIoControl.InputBufferLength)
-		{
-			EVhdVirtualDiskCipherConfigRequest *request = pIrp->AssociatedIrp.SystemBuffer;
-			IoStatus = SetCipherOpts(&request->DiskId, request->Algorithm, &request->Opts);
-		}
-		else
-			IoStatus = STATUS_INVALID_BUFFER_SIZE;
-		break;
-	}
-
-	pIrp->IoStatus.Status = IoStatus;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
 }

@@ -158,7 +158,7 @@ typedef struct{
     INT dwFlags;
     UCHAR Unused[12];
     USHORT wFlags;
-    USHORT wFlags2; // 1 - read only, 4 - ignore sync requests
+    USHORT wMountFlags; // 1 - read only, 4 - ignore sync requests
 
 #if WINVEREX >= 0x10000000
     GUID SnapshotId;
@@ -352,12 +352,12 @@ typedef struct {
 
 #endif
 #endif
-} VstorParserInfo;
+} VSTOR_PARSER_INFO;
 
 #pragma warning(pop)
 #pragma pack(pop)
 
-NTSTATUS VstorRegisterParser(VstorParserInfo *);
+NTSTATUS VstorRegisterParser(VSTOR_PARSER_INFO *);
 NTSTATUS VstorCompleteScsiRequest(PVOID);
 NTSTATUS VstorSendNotification(PVOID, INT);
 NTSTATUS VstorSendMediaNotification(PVOID);

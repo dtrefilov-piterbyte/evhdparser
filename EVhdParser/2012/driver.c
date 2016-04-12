@@ -6,41 +6,21 @@
 #include "utils.h"
 #include "Ioctl.h"
 #include "Vdrvroot.h"
-
-static DEVICE_OBJECT WPP_MAIN_CB = { 0 };
-static PDEVICE_OBJECT WPP_GLOBAL_Control = NULL;
+#include "Dispatch.h"
 
 static HANDLE g_shimFileHandle = NULL;
-
-static void WppInitKm()
-{
-	if (WPP_GLOBAL_Control != &WPP_MAIN_CB)
-	{
-		WPP_GLOBAL_Control = &WPP_MAIN_CB;
-		//IoWMIRegistrationControl(&WPP_MAIN_CB, WMIREG_ACTION_REGISTER);
-	}
-}
-
-static void WppCleanupKm()
-{
-	if (WPP_GLOBAL_Control == &WPP_MAIN_CB)
-	{
-		//IoWMIRegistrationControl(&WPP_MAIN_CB, WMIREG_ACTION_DEREGISTER);
-		WPP_GLOBAL_Control = NULL;
-	}
-}
 
 /** Driver unload routine */
 void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
 {
-	UNREFERENCED_PARAMETER(pDriverObject);
+    UNREFERENCED_PARAMETER(pDriverObject);
 	if (g_shimFileHandle)
 	{
 		ZwClose(g_shimFileHandle);
 		g_shimFileHandle = NULL;
-	}
-
-	WppCleanupKm();
+    }
+    Log_Cleanup();
+    DPT_Cleanup();
 }
 
 /** Default major function dispatcher */
@@ -99,30 +79,25 @@ cleanup_failure:
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
-	ULONG ulIndex;
 	NTSTATUS status = STATUS_SUCCESS;
 	VstorParserInfo ParserInfo = { 0 };
+    PDEVICE_OBJECT pDeviceObject = NULL;
 
-	UNREFERENCED_PARAMETER(pRegistryPath);
+    pDriverObject->DriverUnload = EVhdDriverUnload;
 
-	WPP_MAIN_CB.Type = 0;
-	WPP_MAIN_CB.NextDevice = NULL;
-	WPP_MAIN_CB.CurrentIrp = NULL;
-	WPP_MAIN_CB.DriverObject = pDriverObject;
-	WPP_MAIN_CB.ReferenceCount = 1;
+    status = DPT_Initialize(pDriverObject, pRegistryPath, &pDeviceObject);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("DPT_Initialize failed with error: 0x%08X\n", status);
+        return status;
+    }
 
-	WppInitKm();
-
-	for (ulIndex = 0; ulIndex < IRP_MJ_MAXIMUM_FUNCTION; ++ulIndex)
-	{
-		pDriverObject->MajorFunction[ulIndex] = DispatchPassThrough;
-	}
-
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] = DispatchCreate;
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchClose;
-
-
-	pDriverObject->DriverUnload = EVhdDriverUnload;
+    status = Log_Initialize(pDeviceObject, pRegistryPath);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("Log_Initialize failed with error: 0x%08X\n", status);
+        return status;
+    }
 
 	ParserInfo.qwVersion = 0;
 	ParserInfo.qwUnk1 = 0;
@@ -143,53 +118,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	status = EVhdDriverLoad(&ParserInfo.dwBalancerId);
 	if (!NT_SUCCESS(status))
 	{
-        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "EVhdDriverLoad failed with error: 0x%08X\n", status);
+        DbgPrint("EVhdDriverLoad failed with error: 0x%08X\n", status);
 		return status;
 	}
 
 	status = RegisterParser(&ParserInfo);
 	if (!NT_SUCCESS(status))
 	{
-        LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "RegisterParser failed with error: 0x%08X\n", status);
+        DbgPrint("RegisterParser failed with error: 0x%08X\n", status);
 		return status;
 	}
 
 	return status;
-}
-
-static NTSTATUS DispatchPassThrough(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-static NTSTATUS DispatchCreate(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	DbgPrint("DispatchCreate called\n");
-
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
-}
-
-static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
-{
-	UNREFERENCED_PARAMETER(pDeviceObject);
-
-	//PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)pDeviceObject->DeviceExtension;
-	DbgPrint("DispatchClose called\n");
-
-	pIrp->IoStatus.Status = STATUS_SUCCESS;
-	pIrp->IoStatus.Information = 0;
-	IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-	return STATUS_SUCCESS;
 }

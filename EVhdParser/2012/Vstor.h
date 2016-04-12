@@ -3,26 +3,26 @@
 
 #pragma pack(push, 1)
 
-struct _SrbPacketRequest;
-struct _SrbPacketInnerRequest;
-struct _SrbPacket;
-struct _VstorSrbPrepareRequest;
+struct _SCSI_PACKET;
+struct _STORVSP_REQUEST;
+struct _STORVSC_REQUEST;
+struct _SCSI_PREPARE_REQUEST;
 struct _ParserInstance;
 
-typedef NTSTATUS(*VstorPrepare_t)(struct _VstorSrbPrepareRequest *pVstorRequest, PVOID arg1, PVOID arg2);
-typedef NTSTATUS(*VstorCompleteSrbRequest_t)(struct _SrbPacket *pPacket, NTSTATUS status);
+typedef NTSTATUS(*VstorPrepare_t)(struct _SCSI_PREPARE_REQUEST *pVstorRequest, PVOID arg1, PVOID arg2);
+typedef NTSTATUS(*VstorCompleteSrbRequest_t)(struct _SCSI_PACKET *pPacket, NTSTATUS status);
 typedef NTSTATUS(*VstorSaveData_t)(PVOID, PVOID);
 typedef NTSTATUS(*VstorRestoreData_t)(PVOID, BOOLEAN);
 
-typedef NTSTATUS(*VhdPrepare_t)(PVOID pOuterInterface, struct _SrbPacket *pPacket,
-	struct _VstorSrbPrepareRequest *pVstorRequest, PVOID pfnCallDriver, PVOID arg1, PVOID arg2);
-typedef NTSTATUS(*VhdCompleteRequest_t)(struct _SrbPacket *pPacket, NTSTATUS status);
+typedef NTSTATUS(*VhdPrepare_t)(PVOID pOuterInterface, struct _SCSI_PACKET *pPacket,
+    struct _SCSI_PREPARE_REQUEST *pVstorRequest, PVOID pfnCallDriver, PVOID arg1, PVOID arg2);
+typedef NTSTATUS(*VhdCompleteRequest_t)(struct _SCSI_PACKET *pPacket, NTSTATUS status);
 typedef NTSTATUS(*VhdSaveData_t)(struct _ParserInstance *parser, PVOID arg1, PVOID arg2);
 typedef NTSTATUS(*VhdRestoreData_t)(struct _ParserInstance *parser, PVOID arg);
 
 typedef NTSTATUS(*SrbSaveData_t)(PVOID, PVOID, ULONG32);
 typedef NTSTATUS(*SrbRestoreData_t)(PVOID, CONST VOID *, ULONG32);
-typedef NTSTATUS(*SrbStartIo_t)(PVOID, struct _SrbPacket *, struct _SrbPacketInnerRequest *, PMDL);
+typedef NTSTATUS(*SrbStartIo_t)(PVOID, struct _SCSI_PACKET *, struct _STORVSP_REQUEST *, PMDL);
 
 typedef struct {
 	VstorSaveData_t					pfnVstorSrbSave;
@@ -42,7 +42,7 @@ typedef struct _PARSER_SAVE_STATE_INFO {
 	ULONG32		dwFinalSize;
 } PARSER_SAVE_STATE_INFO, *PPARSER_SAVE_STATE_INFO;
 			   
-typedef struct _SrbPacketRequest {
+typedef struct _STORVSC_REQUEST {
 	USHORT				wSize;
 	UCHAR				SrbStatus;
 	UCHAR				ScsiStatus;
@@ -63,39 +63,39 @@ typedef struct _SrbPacketRequest {
 		SCSI_CDB_24 Cdb24;
 	}					Sense;
 	ULONG32				SrbFlags;
-} SrbPacketRequest;
+} STORVSC_REQUEST;
 
-typedef struct _SrbPacketInnerRequest {
+typedef struct _STORVSP_REQUEST {
 	SCSI_REQUEST_BLOCK			Srb;
-	PVOID						_;		// NOTE: keep this, needed for correct struct size
-} SrbPacketInnerRequest;
+	PVOID						pContext;
+} STORVSP_REQUEST;
 
-typedef struct _SrbPacket {
+typedef struct _SCSI_PACKET {
 	PVOID						pLinkedUnknown;
-	struct _ParserInstance		*pParser;
-	SrbPacketRequest			*pRequest;
+	PVOID               		pContext;
+	STORVSC_REQUEST 			*pVscRequest;
 	PMDL						pMdl;
 	VstorCompleteSrbRequest_t	pfnCompleteSrbRequest;
-	SrbPacketInnerRequest		*pInner;
+    STORVSP_REQUEST		        *pVspRequest;
 	ULONG32						dwUnused;
 	NTSTATUS					Status;
 	ULONG64						DataTransferLength;
-} SrbPacket;
+} SCSI_PACKET;
 
-typedef struct _VstorSrbPrepareRequest {
-	UCHAR			_[0x18];
+typedef struct _SCSI_PREPARE_REQUEST {
+	UCHAR			unk1[0x18];
 	PVOID			pLinkedUnk;
 	PVOID			pOuterInterface;
 	PVOID			pfnCallDriver;
-	UCHAR			__[0x90];			// NOTE: keep this, needed for correct struct size
-} VstorSrbPrepareRequest;
+	UCHAR		    unk2[0x90];			// NOTE: keep this, needed for correct struct size
+} SCSI_PREPARE_REQUEST;
 
 typedef NTSTATUS(*ParserInit_t)(SrbCallbackInfo *, PCUNICODE_STRING, ULONG32, void **);
 typedef VOID(*ParserCleanup_t)(struct _ParserInstance *);
 typedef VOID(*ParserGetGeometry_t)(struct _ParserInstance *, ULONG32 *, ULONG64 *, ULONG32 *);
 typedef VOID(*ParserGetCapabilities_t)(struct _ParserInstance *, PPARSER_CAPABILITIES);
 typedef NTSTATUS(*ParserMount_t)(struct _ParserInstance *, BOOLEAN, BOOLEAN);
-typedef NTSTATUS(*ParserExecuteSrb_t)(SrbPacket *);
+typedef NTSTATUS(*ParserExecuteSrb_t)(SCSI_PACKET *);
 typedef NTSTATUS(*ParserBeginSave_t)(struct _ParserInstance *, PPARSER_SAVE_STATE_INFO);
 typedef NTSTATUS(*ParserSaveData_t)(struct _ParserInstance *, PVOID, ULONG32 *);
 typedef NTSTATUS(*ParserBeginRestore_t)(struct _ParserInstance *, PPARSER_SAVE_STATE_INFO);

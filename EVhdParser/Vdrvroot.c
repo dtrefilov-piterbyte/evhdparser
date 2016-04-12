@@ -142,7 +142,7 @@ cleanup:
 }
 
 
-// TODO: OpenFlags is an OPEN_VIRTUAL_DISK_FLAG?
+// TODO: OpenFlags are from set OPEN_VIRTUAL_DISK_FLAG?
 NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath,
 	const ResiliencyInfoEa *pResiliency)
 {

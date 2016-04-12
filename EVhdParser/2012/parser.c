@@ -68,30 +68,29 @@ static VOID EvhdFinalize(ParserInstance *parser)
 	}
 }
 
-static NTSTATUS EvhdSrbPrepare(PVOID pOuterInterface, SrbPacket *pPacket,
-	VstorSrbPrepareRequest *pVstorRequest, PVOID pfnCallDriver, PVOID arg1, PVOID arg2)
+static NTSTATUS EvhdSrbPrepare(PVOID pOuterInterface, SCSI_PACKET *pPacket,
+	SCSI_PREPARE_REQUEST *pVstorRequest, PVOID pfnCallDriver, PVOID arg1, PVOID arg2)
 {
-	memset(pVstorRequest, 0, sizeof(VstorSrbPrepareRequest));
+    ParserInstance *parser = pPacket->pContext;
+	memset(pVstorRequest, 0, sizeof(SCSI_PREPARE_REQUEST));
 	pVstorRequest->pLinkedUnk = pPacket->pLinkedUnknown;
 	pVstorRequest->pOuterInterface = pOuterInterface;
 	pVstorRequest->pfnCallDriver = pfnCallDriver;
-	return pPacket->pParser->pfnVstorSrbPrepare(pVstorRequest, arg1, arg2);
+	return parser->pfnVstorSrbPrepare(pVstorRequest, arg1, arg2);
 }
 
-static VOID EvhdPostProcessSrbPacket(SrbPacket *pPacket, NTSTATUS status);
-static NTSTATUS EvhdSrbCompleteRequest(SrbPacket *pPacket, NTSTATUS status)
+static VOID EvhdPostProcessSrbPacket(SCSI_PACKET *pPacket, NTSTATUS status);
+static NTSTATUS EvhdSrbCompleteRequest(SCSI_PACKET *pPacket, NTSTATUS status)
 {
 	EvhdPostProcessSrbPacket(pPacket, status);
 	return pPacket->pfnCompleteSrbRequest(pPacket, status);
 }
 
-/** Used for synchronouse IO */
 static NTSTATUS EvhdSrbSave(ParserInstance *parser, PVOID arg1, PVOID arg2)
 {
 	return parser->pfnVstorSrbSave(arg1, arg2);
 }
 
-/** Used for synchronouse IO */
 static NTSTATUS EvhdSrbRestore(ParserInstance *parser, PVOID arg)
 {
 	return parser->pfnVstorSrbRestore(arg, __readcr8() >= 2);	// task priority class
@@ -101,7 +100,7 @@ static NTSTATUS EvhdRegisterQoS(ParserInstance *parser)
 {
 #pragma pack(push, 1)
 	struct {
-		ParserInstance			*pParser;
+		PVOID                   pContext;
 		VhdPrepare_t			pfnSrbPrepare;
 		VhdCompleteRequest_t	pfnSrbCompleteRequest;
 		VhdSaveData_t			pfnSrbSave;
@@ -120,8 +119,7 @@ static NTSTATUS EvhdRegisterQoS(ParserInstance *parser)
 
 	if (!parser->bQoSRegistered)
 	{
-
-		req.pParser = parser;
+		req.pContext = parser;
 		req.pfnSrbPrepare = EvhdSrbPrepare;
 		req.pfnSrbCompleteRequest = EvhdSrbCompleteRequest;
 		req.pfnSrbSave = EvhdSrbSave;
@@ -232,48 +230,48 @@ static NTSTATUS EvhdUnregisterIo(ParserInstance *parser)
 	return status;
 }
 
-static VOID EvhdPostProcessSrbPacket(SrbPacket *pPacket, NTSTATUS status)
+static VOID EvhdPostProcessSrbPacket(SCSI_PACKET *pPacket, NTSTATUS status)
 {
-	SrbPacketInnerRequest *pInner = pPacket->pInner;
-	SrbPacketRequest *pRequest = pPacket->pRequest;
+	STORVSP_REQUEST *pVspRequest = pPacket->pVspRequest;
+	STORVSC_REQUEST *pVscRequest = pPacket->pVscRequest;
 
-	pRequest->SrbStatus = pInner->Srb.SrbStatus;
-	pRequest->ScsiStatus = pInner->Srb.ScsiStatus;
-	pRequest->SenseInfoBufferLength = pInner->Srb.SenseInfoBufferLength;
-	pRequest->DataTransferLength = pInner->Srb.DataTransferLength;
+    pVscRequest->SrbStatus = pVspRequest->Srb.SrbStatus;
+    pVscRequest->ScsiStatus = pVspRequest->Srb.ScsiStatus;
+    pVscRequest->SenseInfoBufferLength = pVspRequest->Srb.SenseInfoBufferLength;
+    pVscRequest->DataTransferLength = pVspRequest->Srb.DataTransferLength;
 	if (NT_SUCCESS(pPacket->Status = status))
-		pPacket->DataTransferLength = pInner->Srb.DataTransferLength;
+        pPacket->DataTransferLength = pVspRequest->Srb.DataTransferLength;
 	else
 		pPacket->DataTransferLength = 0;
 }
 
-static NTSTATUS EvhdSrbInitializeInner(SrbPacket *pPacket)
+static NTSTATUS EvhdSrbInitializeInner(SCSI_PACKET *pPacket)
 {
-	NTSTATUS status = STATUS_SUCCESS;
-	SrbPacketInnerRequest *pInner = pPacket->pInner;
-	SrbPacketRequest *pRequest = pPacket->pRequest;
+    NTSTATUS status = STATUS_SUCCESS;
+    STORVSP_REQUEST *pVspRequest = pPacket->pVspRequest;
+    STORVSC_REQUEST *pVscRequest = pPacket->pVscRequest;
 	PMDL pMdl = pPacket->pMdl;
-	memset(&pInner->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
-	pInner->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
-	pInner->Srb.SrbStatus = pRequest->SrbStatus;
-	pInner->Srb.ScsiStatus = pRequest->ScsiStatus;
-	pInner->Srb.PathId = pRequest->ScsiPathId;
-	pInner->Srb.TargetId = pRequest->ScsiTargetId;
-	pInner->Srb.Lun = pRequest->ScsiLun;
-	pInner->Srb.CdbLength = pRequest->CdbLength;
-	pInner->Srb.SenseInfoBufferLength = pRequest->SenseInfoBufferLength;
-	pInner->Srb.SrbFlags = pRequest->bDataIn ? SRB_FLAGS_DATA_IN : SRB_FLAGS_DATA_OUT;
-	pInner->Srb.DataTransferLength = pRequest->DataTransferLength;
-	pInner->Srb.SrbFlags |= pRequest->SrbFlags & 8000;			  // Non-standard
+	memset(&pVspRequest->Srb, 0, SCSI_REQUEST_BLOCK_SIZE);
+    pVspRequest->Srb.Length = SCSI_REQUEST_BLOCK_SIZE;
+    pVspRequest->Srb.SrbStatus = pVscRequest->SrbStatus;
+    pVspRequest->Srb.ScsiStatus = pVscRequest->ScsiStatus;
+    pVspRequest->Srb.PathId = pVscRequest->ScsiPathId;
+    pVspRequest->Srb.TargetId = pVscRequest->ScsiTargetId;
+    pVspRequest->Srb.Lun = pVscRequest->ScsiLun;
+    pVspRequest->Srb.CdbLength = pVscRequest->CdbLength;
+    pVspRequest->Srb.SenseInfoBufferLength = pVscRequest->SenseInfoBufferLength;
+    pVspRequest->Srb.SrbFlags = pVscRequest->bDataIn ? SRB_FLAGS_DATA_IN : SRB_FLAGS_DATA_OUT;
+    pVspRequest->Srb.DataTransferLength = pVscRequest->DataTransferLength;
+    pVspRequest->Srb.SrbFlags |= pVscRequest->SrbFlags & 8000;			  // Non-standard
 
-	switch ((UCHAR)pRequest->Sense.Cdb6.OpCode)
+    switch ((UCHAR)pVscRequest->Sense.Cdb6.OpCode)
 	{
 	default:
 		if (pMdl)
 		{
-			pInner->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
+            pVspRequest->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
 				pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
-			if (!pInner->Srb.DataBuffer)
+            if (!pVspRequest->Srb.DataBuffer)
 			{
 				status = STATUS_INSUFFICIENT_RESOURCES;
 				break;
@@ -289,9 +287,9 @@ static NTSTATUS EvhdSrbInitializeInner(SrbPacket *pPacket)
 	case SCSI_OP_CODE_WRITE_12:
 	case SCSI_OP_CODE_WRITE_16:
 		// align 0x10
-		pInner->Srb.SrbExtension = (PVOID)(((INT_PTR)(pInner + 1) + 0xF) & ~0xF);	// variable-length extension right after the inner request block
-		pInner->Srb.SenseInfoBuffer = &pRequest->Sense;
-		memmove(pInner->Srb.Cdb, &pRequest->Sense, pRequest->CdbLength);
+        pVspRequest->Srb.SrbExtension = (PVOID)(((INT_PTR)(pVspRequest + 1) + 0xF) & ~0xF);	// variable-length extension right after the inner request block
+        pVspRequest->Srb.SenseInfoBuffer = &pVscRequest->Sense;
+        memmove(pVspRequest->Srb.Cdb, &pVscRequest->Sense, pVscRequest->CdbLength);
 		break;
 	}
 	return status;
@@ -414,16 +412,16 @@ NTSTATUS EVhdMount(ParserInstance *parser, BOOLEAN bMountDismount, BOOLEAN regis
 	return status;
 }
 
-NTSTATUS EVhdExecuteSrb(SrbPacket *pPacket)
+NTSTATUS EVhdExecuteSrb(SCSI_PACKET *pPacket)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	ParserInstance *parser = NULL;
-	SrbPacketInnerRequest *pInner = NULL;
-	SrbPacketRequest *pRequest = NULL;
+    ParserInstance *parser = NULL;
+    STORVSP_REQUEST *pVspRequest = pPacket->pVspRequest;
+    STORVSC_REQUEST *pVscRequest = pPacket->pVscRequest;
 	
 	if (!pPacket)
 		return STATUS_INVALID_PARAMETER;
-	parser = pPacket->pParser;
+	parser = pPacket->pContext;
 	if (!parser)
 		return STATUS_INVALID_PARAMETER;
 	if (parser->bSynchronouseIo)
@@ -436,15 +434,14 @@ NTSTATUS EVhdExecuteSrb(SrbPacket *pPacket)
         LOG_PARSER(LL_FATAL, "Backing store doesn't provide a valid asynchronouse Io");
 		return STATUS_INVALID_DEVICE_REQUEST;
 	}
-	pInner = pPacket->pInner;
-	if (!pInner)
+    if (!pVspRequest)
 		return STATUS_INVALID_PARAMETER;
-	memset(pInner, 0, sizeof(SrbPacketInnerRequest));
+    memset(pVspRequest, 0, sizeof(STORVSP_REQUEST));
 	status = EvhdSrbInitializeInner(pPacket);
 	if (NT_SUCCESS(status))
-		status = parser->QoS.pfnStartIo(parser->QoS.pIoInterface, pPacket, pInner, pPacket->pMdl);
+        status = parser->QoS.pfnStartIo(parser->QoS.pIoInterface, pPacket, pVspRequest, pPacket->pMdl);
 	else
-		pRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
+		pVscRequest->SrbStatus = SRB_STATUS_INTERNAL_ERROR;
 
 	if (STATUS_PENDING != status)
 		EvhdPostProcessSrbPacket(pPacket, status);
