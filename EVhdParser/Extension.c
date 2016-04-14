@@ -35,7 +35,7 @@ PMDL Ext_FreeInnerMdl(PMDL pMdl)
     return pSourceMdl;
 }
 
-NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, BOOLEAN Encrypt)
+NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, SIZE_T sector, BOOLEAN Encrypt)
 {
     NTSTATUS status = STATUS_SUCCESS;
     BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
@@ -46,7 +46,6 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
 
     if (!ExtContext || !pSourceMdl || !pTargetMdl)
         return STATUS_INVALID_PARAMETER;
-    // have no cipher
     if (!ExtContext->pCipherContext)
         return STATUS_SUCCESS;
 
@@ -80,7 +79,7 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
         PUCHAR pSourceSector = (PUCHAR)pSource + SectorOffset;
         PUCHAR pTargetSector = (PUCHAR)pTarget + SectorOffset;
         status = (Encrypt ? ExtContext->pCipherEngine->pfnEncrypt : ExtContext->pCipherEngine->pfnDecrypt)(
-            ExtContext->pCipherContext, pSourceSector, pTargetSector, SectorSize);
+            ExtContext->pCipherContext, pSourceSector, pTargetSector, SectorSize, sector++);
         if (!NT_SUCCESS(status))
             break;
     }
@@ -227,7 +226,7 @@ NTSTATUS Ext_StartScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET 
 
             pExtPacket->pMdl = Ext_AllocateInnerMdl(pMdl);
 
-            Status = Ext_CryptBlocks(Context, pMdl, pExtPacket->pMdl, pExtPacket->Srb->DataTransferLength, TRUE);
+            Status = Ext_CryptBlocks(Context, pMdl, pExtPacket->pMdl, pExtPacket->Srb->DataTransferLength, dwSectorOffset, TRUE);
 
             pMdl = pExtPacket->pMdl;
 
@@ -268,7 +267,7 @@ NTSTATUS Ext_CompleteScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACK
             EXTLOG(LL_VERBOSE, "Read request completed: %X blocks starting from %X\n",
                 wSectors, dwSectorOffset);
             if (NT_SUCCESS(Status)) {
-                Ext_CryptBlocks(Context, pMdl, pMdl, pExtPacket->Srb->DataTransferLength, FALSE);
+                Ext_CryptBlocks(Context, pMdl, pMdl, pExtPacket->Srb->DataTransferLength, dwSectorOffset, FALSE);
             }
         }
         break;

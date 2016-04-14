@@ -152,8 +152,9 @@ NTSTATUS Aes128CipherInit(PVOID ctx, CONST VOID *iv)
 	return status;
 }
 
-NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T size)
+NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T size, SIZE_T sector)
 {
+    UNREFERENCED_PARAMETER(sector);
 	NTSTATUS status = STATUS_SUCCESS;
 	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
 	if (!aesCipher || aesCipher->hKey == NULL)
@@ -183,8 +184,9 @@ NTSTATUS Aes128CipherEncrypt(PVOID ctx, CONST VOID *plain, VOID *cipher, SIZE_T 
 	return status;
 }
 
-NTSTATUS Aes128CipherDecrypt(PVOID ctx, CONST VOID *cipher, VOID *plain, SIZE_T size)
+NTSTATUS Aes128CipherDecrypt(PVOID ctx, CONST VOID *cipher, VOID *plain, SIZE_T size, SIZE_T sector)
 {
+    UNREFERENCED_PARAMETER(sector);
 	NTSTATUS status = STATUS_SUCCESS;
 	Aes128CipherContext *aesCipher = (Aes128CipherContext *)ctx;
 	if (!aesCipher || aesCipher->hKey == NULL)

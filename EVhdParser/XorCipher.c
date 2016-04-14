@@ -45,8 +45,9 @@ NTSTATUS XorCipherInit(PVOID ctx, CONST VOID *iv)
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS XorCipherCrypt(PVOID ctx, CONST VOID *source, VOID *target, SIZE_T size)
+NTSTATUS XorCipherCrypt(PVOID ctx, CONST VOID *source, VOID *target, SIZE_T size, SIZE_T sector)
 {
+    UNREFERENCED_PARAMETER(sector);
 	SIZE_T i = 0;
 	const ULONG32 dwXorVal = ((XorCipherContext *)ctx)->dwXorVal;
 	if (size > 64)

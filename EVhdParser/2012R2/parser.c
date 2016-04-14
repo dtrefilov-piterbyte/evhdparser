@@ -515,6 +515,7 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
         ExtPacket.pSenseBuffer = &pPacket->Sense;
         ExtPacket.Srb = &pVspRequest->Srb;
         status = Ext_StartScsiRequest(parser->pExtension, &ExtPacket);
+        pPacket->pMdl = ExtPacket.pMdl;
     }
 
     if (NT_SUCCESS(status)) {
