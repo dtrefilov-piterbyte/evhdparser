@@ -488,9 +488,7 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
     default:
         if (pMdl)
         {
-            pVspRequest->Srb.DataBuffer = pMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) ?
-                pMdl->MappedSystemVa : MmMapLockedPagesSpecifyCache(pMdl, KernelMode, MmCached, NULL, FALSE,
-                NormalPagePriority | MdlMappingNoExecute);
+            pVspRequest->Srb.DataBuffer = MmGetSystemAddressForMdlSafe(pMdl, NormalPagePriority | MdlMappingNoExecute);
             if (!pVspRequest->Srb.DataBuffer)
             {
                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -519,7 +517,7 @@ NTSTATUS EVhd_ExecuteScsiRequestDisk(PVOID pContext, SCSI_PACKET *pPacket)
     }
 
     if (NT_SUCCESS(status)) {
-        status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pVspRequest, pMdl, pPacket->bUnkFlag,
+        status = parser->Io.pfnStartIo(parser->Io.pIoInterface, pPacket, pVspRequest, pPacket->pMdl, pPacket->bUnkFlag,
             pPacket->bUseInternalSenseBuffer ? &pPacket->Sense : NULL);
     }
 	else

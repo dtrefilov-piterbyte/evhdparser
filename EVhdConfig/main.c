@@ -154,18 +154,18 @@ int _tmain(int argc, _TCHAR* argv[])
 		FILE_FLAG_OVERLAPPED, NULL);
 	if (hDevice != INVALID_HANDLE_VALUE)
 	{
-		//EVHD_SET_CIPHER_CONFIG_REQUEST request = {
-		//	.DiskId = vhdId,
-		//	.Algorithm = ECipherAlgo_AES128
-		//};
-		//request.Opts.Aes128.OperationMode = OperationMode_CFB;
-        //memcpy(request.Opts.Aes128.Key, rgbTest128Key, sizeof(request.Opts.Aes128.Key));
+		EVHD_SET_CIPHER_CONFIG_REQUEST request = {
+			.DiskId = vhdId,
+			.Algorithm = ECipherAlgo_AES128
+		};
+		request.Opts.Aes128.OperationMode = OperationMode_ECB;
+        memcpy(request.Opts.Aes128.Key, rgbTest128Key, sizeof(request.Opts.Aes128.Key));
 
-        EVHD_SET_CIPHER_CONFIG_REQUEST request = {
-            .DiskId = vhdId,
-            .Algorithm = ECipherAlgo_Xor
-        };
-        request.Opts.Xor.XorMixingValue = 0xCCCCCCCC;
+        //EVHD_SET_CIPHER_CONFIG_REQUEST request = {
+        //    .DiskId = vhdId,
+        //    .Algorithm = ECipherAlgo_Xor
+        //};
+        //request.Opts.Xor.XorMixingValue = 0xCCCCCCCC;
 
 		if (ERROR_SUCCESS != (dwError = SyncrhonousDeviceIoControl(hDevice,
 			IOCTL_VIRTUAL_DISK_SET_CIPHER, &request, sizeof(request), NULL, 0, NULL)))

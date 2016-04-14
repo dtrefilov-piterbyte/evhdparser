@@ -6,12 +6,8 @@
 
 typedef enum {
 	OperationMode_Unknown,
-	OperationMode_CBC,
 	OperationMode_ECB,
-	OperationMode_CFB,
-	OperationMode_OFB,
-	OperationMode_CCM,
-	OperationMode_GCM
+    OperationMode_XTS
 } EOperationMode;
 
 typedef enum

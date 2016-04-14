@@ -25,29 +25,21 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 	if (!NT_SUCCESS(status = BCryptOpenAlgorithmProvider(
 		&aesCipher->hAlgorithm,
 		BCRYPT_AES_ALGORITHM,
-		NULL,
+        MS_PRIMITIVE_PROVIDER,
 		0)))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Failed to open AES algorithm provider");
-		ExFreePoolWithTag(aesCipher, AesCipherTag);
-		return status;
+        goto Cleanup;
 	}
 	switch (aesConfig->OperationMode)
-	{
-	case OperationMode_CBC:
-		pszChainMode = BCRYPT_CHAIN_MODE_CBC;
-		break;
-	case OperationMode_CFB:
-		pszChainMode = BCRYPT_CHAIN_MODE_CFB;
-		break;
-	case OperationMode_CCM:
-		pszChainMode = BCRYPT_CHAIN_MODE_CCM;
-		break;
-	case OperationMode_GCM:
-		pszChainMode = BCRYPT_CHAIN_MODE_GCM;
-		break;
+    {
+    default:
+        LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: Unknown mode of operation");
+        goto Cleanup;
+    case OperationMode_XTS:
+        LOG_FUNCTION(LL_ERROR, LOG_CTG_CIPHER, "Aes128Cipher: XTS not implemented");
+        goto Cleanup;
 	case OperationMode_ECB:
-	default:
 		pszChainMode = BCRYPT_CHAIN_MODE_ECB;
 		break;
 	}
@@ -60,7 +52,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		0)))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not set chaingin mode");
-        return status;
+        goto Cleanup;
 	}
 
 	if (!NT_SUCCESS(status = BCryptGetProperty(
@@ -72,7 +64,7 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		0)))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not get key object length");
-		return status;
+        goto Cleanup;
 	}
 
 	if (!NT_SUCCESS(status = BCryptGetProperty(
@@ -84,20 +76,22 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		0)))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not get block length");
-		return status;
+        goto Cleanup;
 	}
 
 	if (cbBlockLen != Aes128CipherEngine.dwBlockSize)
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Block size do not match");
-		return STATUS_INVALID_BUFFER_SIZE;
+		status = STATUS_INVALID_BUFFER_SIZE;
+        goto Cleanup;
 	}
 
 	aesCipher->pbKeyObject = ExAllocatePoolWithTag(NonPagedPoolNx, aesCipher->cbKeyObject, AesCipherTag);
 	if (!aesCipher->pbKeyObject)
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Failed to allocate memory for key object\n");
-		return STATUS_NO_MEMORY;
+		status = STATUS_NO_MEMORY;
+        goto Cleanup;
 	}
 
 	if (!NT_SUCCESS(status = BCryptGenerateSymmetricKey(
@@ -110,13 +104,17 @@ NTSTATUS Aes128CipherCreate(PVOID cipherConfig, PVOID *pOutContext)
 		0)))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_CIPHER, "Aes128Cipher: Could not generate key");
-		ExFreePoolWithTag(aesCipher->pbKeyObject, AesCipherTag);
-		aesCipher->pbKeyObject = NULL;
-		return status;
+        goto Cleanup;
 	}
 
+Cleanup:
+    if (!NT_SUCCESS(status)) {
+        if (aesCipher)
+            Aes128CipherDestroy(aesCipher);
+    }
+
 	*pOutContext = aesCipher;
-	return STATUS_SUCCESS;
+	return status;
 }
 
 NTSTATUS Aes128CipherDestroy(PVOID ctx)

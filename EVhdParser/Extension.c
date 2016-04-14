@@ -21,6 +21,7 @@ PMDL Ext_AllocateInnerMdl(PMDL pSourceMdl)
     HighAddress.QuadPart = 0xFFFFFFFFFFFFFFFF;
     SkipBytes.QuadPart = 0;
 
+    // TODO: MM_DONT_ZERO_ALLOCATION - is a security issue?
     PMDL pNewMdl = MmAllocatePagesForMdlEx(LowAddress, HighAddress, SkipBytes, pSourceMdl->ByteCount, MmCached, MM_DONT_ZERO_ALLOCATION);
     pNewMdl->Next = pSourceMdl;
 
