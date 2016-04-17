@@ -7,6 +7,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EVhdParser", "EVhdParser\EV
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EVhdConfig", "EVhdConfig\EVhdConfig.vcxproj", "{0F77F6BE-C1BD-4558-94C2-93403280079E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dcrypt", "dcrypt", "{AC2ABA80-AF3B-4EA9-A3F5-6A27532763FF}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crypto_fast", "..\dcrypt\crypto\crypto_fast\crypto_fast.vcxproj", "{847784B5-6850-4A7D-91DE-D6A98BF726EA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Win10 Debug|x64 = Win10 Debug|x64
@@ -41,8 +45,23 @@ Global
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Debug|x64.Build.0 = Debug|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Release|x64.ActiveCfg = Release|x64
 		{0F77F6BE-C1BD-4558-94C2-93403280079E}.Win8.1 Release|x64.Build.0 = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win10 Debug|x64.ActiveCfg = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win10 Debug|x64.Build.0 = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win10 Release|x64.ActiveCfg = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win10 Release|x64.Build.0 = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8 Debug|x64.ActiveCfg = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8 Debug|x64.Build.0 = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8 Release|x64.ActiveCfg = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8 Release|x64.Build.0 = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8.1 Debug|x64.ActiveCfg = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8.1 Debug|x64.Build.0 = Debug|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8.1 Release|x64.ActiveCfg = Release|x64
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA}.Win8.1 Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{847784B5-6850-4A7D-91DE-D6A98BF726EA} = {AC2ABA80-AF3B-4EA9-A3F5-6A27532763FF}
 	EndGlobalSection
 EndGlobal

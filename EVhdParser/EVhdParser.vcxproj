@@ -143,6 +143,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Debug|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -157,6 +158,9 @@
       <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
     </ClCompile>
+    <Link>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win7 Release|x64'">
     <Link />
@@ -165,10 +169,14 @@
       <PreprocessorDefinitions>_WINKRNL;_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
     </ClCompile>
+    <Link>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -179,6 +187,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Debug|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -189,6 +198,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8 Release|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -199,6 +209,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -209,6 +220,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Win10 Release|x64'">
     <Link>
       <AdditionalDependencies>ksecdd.lib;FltMgr.lib;storvsp2012R2.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/IGNORE:4257 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <ClCompile />
     <ClCompile>
@@ -341,6 +353,11 @@
     <ClInclude Include="utils.h" />
     <ClInclude Include="Vdrvroot.h" />
     <ClInclude Include="XorCipher.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dcrypt\crypto\crypto_fast\crypto_fast.vcxproj">
+      <Project>{847784b5-6850-4a7d-91de-d6a98bf726ea}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

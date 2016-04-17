@@ -2,6 +2,7 @@
 /*.sdf
 /*.suo
 *.vcxproj.user
+/Bin
 x64
 Win8Debug
 Win8.1Debug

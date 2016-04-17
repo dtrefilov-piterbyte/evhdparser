@@ -1,0 +1,3 @@
+[submodule "dcrypt"]
+	path = dcrypt
+	url = https://github.com/hkerem/dcrypt.git
