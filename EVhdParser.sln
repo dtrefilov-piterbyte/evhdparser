@@ -9,7 +9,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EVhdConfig", "EVhdConfig\EV
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dcrypt", "dcrypt", "{AC2ABA80-AF3B-4EA9-A3F5-6A27532763FF}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crypto_fast", "..\dcrypt\crypto\crypto_fast\crypto_fast.vcxproj", "{847784B5-6850-4A7D-91DE-D6A98BF726EA}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "crypto_fast", "dcrypt\crypto\crypto_fast\crypto_fast.vcxproj", "{847784B5-6850-4A7D-91DE-D6A98BF726EA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
