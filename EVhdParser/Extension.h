@@ -25,7 +25,7 @@ NTSTATUS Ext_Cleanup();
 
 /**
 
- EVhdExtCreate
+ Ext_Create
 
  Routine Description:
 	This function is called when storage VSP opens a virtual disk
@@ -44,7 +44,7 @@ NTSTATUS Ext_Create(_In_ PCUNICODE_STRING DiskPath,
 
 /**
 
- EVhdExtDelete
+ Ext_Delete
 
  Routine Description:
 	This function is called to free all data associated with the
@@ -56,30 +56,29 @@ NTSTATUS Ext_Delete(_In_ PVOID DiskContext);
 
 /**
 
- EVhdExtMount
+ Ext_Mount
 
  Routine Description:
 	This function is called when storage VSP starts the IO on specified virtual disk.
 	It might not be called at all if disk is opened only to query disk metadata  
  Arguments:
 	DiskContext - The extension context allocated in EVhdExtCreate
-	MountFlags - combination of known flags
 */
-NTSTATUS Ext_Mount(_In_ PVOID ExtContext, _In_ INT MountFlags);
+NTSTATUS Ext_Mount(_In_ PVOID ExtContext);
 
 /**
 
- EVhdExtUnmount
+ Ext_Dismount
 
  Routine Description:
 	This function is called when storage VSP unmounts disk to free all IO-releated resources
 	and unblock access to the disk
 */
-NTSTATUS Ext_Unmount(_In_ PVOID ExtContext);
+NTSTATUS Ext_Dismount(_In_ PVOID ExtContext);
 
 /**
 
- EVhdExtPause
+ Ext_Pause
 
  Routine Description:
 	This function is called when storage VSP suspends and current stores disk state to the media
@@ -89,7 +88,7 @@ NTSTATUS Ext_Pause(_In_ PVOID ExtContext, _In_ PVOID SaveBuffer, _Inout_ SIZE_T 
 
 /**
 
- EVhdExtRestore
+ Ext_Restore
 
  Routine Description:
 	This function is called to restore previosly saved state by EVhdExtPause
@@ -97,7 +96,7 @@ NTSTATUS Ext_Pause(_In_ PVOID ExtContext, _In_ PVOID SaveBuffer, _Inout_ SIZE_T 
 NTSTATUS Ext_Restore(_In_ PVOID ExtContext, PVOID RestoreBuffer, SIZE_T RestoreBufferSize);
 
 /**
- EVhdExtStartScsiRequest
+ Ext_StartScsiRequest
 
  Routine Description:
 	This function is called to filter all SCSI commands
@@ -105,7 +104,7 @@ NTSTATUS Ext_Restore(_In_ PVOID ExtContext, PVOID RestoreBuffer, SIZE_T RestoreB
 NTSTATUS Ext_StartScsiRequest(_In_ PVOID ExtContext, _In_ PEVHD_EXT_SCSI_PACKET pExtPacket);
 
 /**
- EVhdExtCompleteScsiRequest
+ Ext_CompleteScsiRequest
 
  Routine Description:
 	 	

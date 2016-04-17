@@ -294,7 +294,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="AesCipher.c" />
+    <ClCompile Include="AesXtsCipher.c" />
     <ClCompile Include="cipher.c" />
     <ClCompile Include="Dispatch.c" />
     <ClCompile Include="Extension.c" />
@@ -305,7 +305,6 @@
     </ClCompile>
     <ClCompile Include="utils.c" />
     <ClCompile Include="Vdrvroot.c" />
-    <ClCompile Include="XorCipher.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="2012R2\driver.h">
@@ -362,7 +361,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
-    <ClInclude Include="AesCipher.h" />
+    <ClInclude Include="AesXtsCipher.h" />
     <ClInclude Include="cipher.h" />
     <ClInclude Include="CipherOpts.h" />
     <ClInclude Include="Control.h" />
@@ -376,7 +375,6 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="Vdrvroot.h" />
-    <ClInclude Include="XorCipher.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\dcrypt\crypto\crypto_fast\crypto_fast.vcxproj">

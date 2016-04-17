@@ -13,11 +13,12 @@ typedef struct
 	ECipherAlgo Algorithm;
 	union
 	{
-		XorCipherOptions Xor;
-		Aes128CipherOptions Aes128;
-		UCHAR Reserved[0x100];
+        AesXtsCipherOptions AesXts;
+		UCHAR Reserved[0xEC];
 	} Opts;
 } EVHD_SET_CIPHER_CONFIG_REQUEST;
+
+C_ASSERT(sizeof(EVHD_SET_CIPHER_CONFIG_REQUEST) == 0x100);
 
 typedef struct
 {

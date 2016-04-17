@@ -12,6 +12,7 @@ const ULONG32 ExtAllocationTag = 'SExt';
 typedef struct {
     CipherEngine *pCipherEngine;
     PVOID pCipherContext;
+    GUID DiskId;
 } EXTENSION_CONTEXT, *PEXTENSION_CONTEXT;
 
 PMDL Ext_AllocateInnerMdl(PMDL pSourceMdl)
@@ -41,7 +42,6 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
     NTSTATUS status = STATUS_SUCCESS;
     BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
     PVOID pSource = NULL, pTarget = NULL;
-    // TODO: use sector size from vhdmp
     CONST SIZE_T SectorSize = 512;
     SIZE_T SectorOffset = 0;
 
@@ -71,7 +71,7 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
         pTarget = pSource;
     }
 
-    ASSERT(0 == size % SectorSize);
+    LOG_ASSERT(0 == size % SectorSize);
 
     EXTLOG(LL_VERBOSE, "VHD: %s 0x%X bytes\n", Encrypt ? "Encrypting" : "Decrypting", size);
 
@@ -133,17 +133,10 @@ NTSTATUS Ext_Create(_In_ PCUNICODE_STRING DiskPath,
     }
     else
     {
+        Context->DiskId = *DiskId;
         Context->pCipherContext = NULL;
         Context->pCipherEngine = NULL;
-        Status = CipherEngineGet(DiskId, &Context->pCipherEngine, &Context->pCipherContext);
-        if (!NT_SUCCESS(Status)) {
-            EXTLOG(LL_FATAL, "Could not create encryption context");
-            ExFreePoolWithTag(Context, ExtAllocationTag);
-        }
-        else
-        {
-            *DiskContext = Context;
-        }
+        *DiskContext = Context;
     }
     
     TRACE_FUNCTION_OUT_STATUS(Status);
@@ -163,12 +156,15 @@ NTSTATUS Ext_Delete(_In_ PVOID ExtContext)
     return Status;
 }
 
-NTSTATUS Ext_Mount(_In_ PVOID ExtContext, _In_ INT MountFlags)
+NTSTATUS Ext_Mount(_In_ PVOID ExtContext)
 {
-    UNREFERENCED_PARAMETER(ExtContext);
-    UNREFERENCED_PARAMETER(MountFlags);
+    PEXTENSION_CONTEXT Context = ExtContext;
     TRACE_FUNCTION_IN();
     NTSTATUS Status = STATUS_SUCCESS;
+    Status = CipherEngineGet(&Context->DiskId, &Context->pCipherEngine, &Context->pCipherContext);
+    if (!NT_SUCCESS(Status)) {
+        EXTLOG(LL_FATAL, "Could not create encryption context");
+    }
     TRACE_FUNCTION_OUT_STATUS(Status);
     return Status;
 }
@@ -178,6 +174,12 @@ NTSTATUS Ext_Dismount(_In_ PVOID ExtContext)
     UNREFERENCED_PARAMETER(ExtContext);
     TRACE_FUNCTION_IN();
     NTSTATUS Status = STATUS_SUCCESS;
+    PEXTENSION_CONTEXT Context = ExtContext;
+    if (Context->pCipherEngine) {
+        Context->pCipherEngine->pfnDestroy(Context->pCipherContext);
+        Context->pCipherContext = NULL;
+        Context->pCipherEngine = NULL;
+    }
     TRACE_FUNCTION_OUT_STATUS(Status);
     return Status;
 }

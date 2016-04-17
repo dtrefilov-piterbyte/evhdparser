@@ -1,7 +1,11 @@
 #include "stdafx.h"
 #include "cipher.h"
-#include "XorCipher.h"
-#include "AesCipher.h"
+#include "AesXtsCipher.h"
+
+#pragma warning(push)
+#pragma warning(disable:4115)
+#include <../dcrypt/crypto/crypto_fast/xts_fast.h>
+#pragma warning(pop)
 
 const ULONG CipherPoolTag = 'CPHp';
 
@@ -12,8 +16,7 @@ typedef struct _CipherOptsEntry
 	ECipherAlgo Algorithm;
 	union
 	{
-		XorCipherOptions Xor;
-		Aes128CipherOptions Aes128;
+        AesXtsCipherOptions AesXts;
 	} Opts;
 } CipherOptsEntry;
 
@@ -40,11 +43,8 @@ NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *
 	{
 		switch (pFoundNode->Algorithm)
 		{
-		case ECipherAlgo_Xor:
-			engine = &XorCipherEngine;
-			break;
-		case ECipherAlgo_AES128:
-			engine = &Aes128CipherEngine;
+		case ECipherAlgo_AesXts:
+			engine = &AesXtsCipherEngine;
 			break;
 		}
 
@@ -66,6 +66,8 @@ NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *
 
 NTSTATUS CipherInit()
 {
+    const UINT hw_crypt = TRUE;
+    xts_init(hw_crypt);
 	ExInitializeFastMutex(&g_pCipherOptsMutex);
 	return STATUS_SUCCESS;
 }
@@ -85,8 +87,7 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 	switch (Algorithm)
 	{
 	case ECipherAlgo_Disabled:
-	case ECipherAlgo_Xor:
-	case ECipherAlgo_AES128:
+    case ECipherAlgo_AesXts:
 		// Try find existing opts in a list
 		for (pOptsNode = g_pCipherOptsHead; pOptsNode; pOptsNode = pOptsNode->Next)
 		{
@@ -115,11 +116,8 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 			pThisNode->Algorithm = Algorithm;
 			switch (Algorithm)
 			{
-			case ECipherAlgo_AES128:
-				memcpy(&pThisNode->Opts.Aes128, pCipherOpts, sizeof(Aes128CipherOptions));
-				break;
-			case ECipherAlgo_Xor:
-				memcpy(&pThisNode->Opts.Xor, pCipherOpts, sizeof(XorCipherOptions));
+            case ECipherAlgo_AesXts:
+				memcpy(&pThisNode->Opts.AesXts, pCipherOpts, sizeof(AesXtsCipherOptions));
 				break;
 			}
 		}

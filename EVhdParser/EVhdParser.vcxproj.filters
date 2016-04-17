@@ -45,13 +45,7 @@
     <ClCompile Include="Vdrvroot.c">
       <Filter>common</Filter>
     </ClCompile>
-    <ClCompile Include="XorCipher.c">
-      <Filter>cipher</Filter>
-    </ClCompile>
     <ClCompile Include="cipher.c">
-      <Filter>cipher</Filter>
-    </ClCompile>
-    <ClCompile Include="AesCipher.c">
       <Filter>cipher</Filter>
     </ClCompile>
     <ClCompile Include="2016\parser.c">
@@ -71,6 +65,9 @@
     </ClCompile>
     <ClCompile Include="Extension.c">
       <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="AesXtsCipher.c">
+      <Filter>cipher</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -110,12 +107,6 @@
     <ClInclude Include="cipher.h">
       <Filter>cipher</Filter>
     </ClInclude>
-    <ClInclude Include="XorCipher.h">
-      <Filter>cipher</Filter>
-    </ClInclude>
-    <ClInclude Include="AesCipher.h">
-      <Filter>cipher</Filter>
-    </ClInclude>
     <ClInclude Include="Control.h">
       <Filter>common</Filter>
     </ClInclude>
@@ -142,6 +133,9 @@
     </ClInclude>
     <ClInclude Include="Extension.h">
       <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="AesXtsCipher.h">
+      <Filter>cipher</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

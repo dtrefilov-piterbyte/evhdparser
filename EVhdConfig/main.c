@@ -5,8 +5,14 @@
 #include "../EVhdParser/Control.h"
 #include <virtdisk.h>
 
-UCHAR rgbTest128Key[16] = {
-	162, 101, 19, 209, 154, 134, 198, 11, 40, 242, 103, 43, 26, 9, 159, 59
+UCHAR rgbTest256KeyPart1[32] = {
+    0x27, 0x18, 0x28, 0x18, 0x28, 0x45, 0x90, 0x45, 0x23, 0x53, 0x60, 0x28, 0x74, 0x71, 0x35, 0x26,
+    0x62, 0x49, 0x77, 0x57, 0x24, 0x70, 0x93, 0x69, 0x99, 0x59, 0x57, 0x49, 0x66, 0x96, 0x76, 0x27
+};
+
+UCHAR rgbTest256KeyPart2[32] = {
+    0x31, 0x41, 0x59, 0x26, 0x53, 0x58, 0x97, 0x93, 0x23, 0x84, 0x62, 0x64, 0x33, 0x83, 0x27, 0x95,
+    0x02, 0x88, 0x41, 0x97, 0x16, 0x93, 0x99, 0x37, 0x51, 0x05, 0x82, 0x09, 0x74, 0x94, 0x45, 0x92
 };
 
 DWORD SyncrhonousDeviceIoControl(HANDLE hDevice, DWORD dwControlCode, LPVOID lpInBuffer,
@@ -154,18 +160,12 @@ int _tmain(int argc, _TCHAR* argv[])
 		FILE_FLAG_OVERLAPPED, NULL);
 	if (hDevice != INVALID_HANDLE_VALUE)
 	{
-		EVHD_SET_CIPHER_CONFIG_REQUEST request = {
-			.DiskId = vhdId,
-			.Algorithm = ECipherAlgo_AES128
-		};
-		request.Opts.Aes128.OperationMode = OperationMode_ECB;
-        memcpy(request.Opts.Aes128.Key, rgbTest128Key, sizeof(request.Opts.Aes128.Key));
-
-        //EVHD_SET_CIPHER_CONFIG_REQUEST request = {
-        //    .DiskId = vhdId,
-        //    .Algorithm = ECipherAlgo_Xor
-        //};
-        //request.Opts.Xor.XorMixingValue = 0xCCCCCCCC;
+        EVHD_SET_CIPHER_CONFIG_REQUEST request = {
+            .DiskId = vhdId,
+            .Algorithm = ECipherAlgo_AesXts
+        };
+        memmove(request.Opts.AesXts.CryptoKey, rgbTest256KeyPart1, 32);
+        memmove(request.Opts.AesXts.TweakKey, rgbTest256KeyPart2, 32);
 
 		if (ERROR_SUCCESS != (dwError = SyncrhonousDeviceIoControl(hDevice,
 			IOCTL_VIRTUAL_DISK_SET_CIPHER, &request, sizeof(request), NULL, 0, NULL)))

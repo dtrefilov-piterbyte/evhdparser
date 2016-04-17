@@ -191,6 +191,15 @@ static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN flag1, BOOLEAN f
     TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
 
+    if (parser->pExtension)
+    {
+        status = Ext_Mount(parser->pExtension);
+        if (!NT_SUCCESS(status))
+        {
+            return status;
+        }
+    }
+
 	if (!parser->bIoRegistered)
 	{
 		REGISTER_IO_REQUEST request = { 0 };
@@ -293,6 +302,10 @@ static NTSTATUS EVhd_UnregisterIo(ParserInstance *parser)
 		parser->dwDiskSaveSize = 0;
 		parser->dwInnerBufferSize = 0;
 	}
+
+    if (parser->pExtension)
+        status = Ext_Dismount(parser->pExtension);
+
     TRACE_FUNCTION_OUT_STATUS(status);
 
 	return status;
