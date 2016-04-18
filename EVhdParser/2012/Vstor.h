@@ -83,12 +83,41 @@ typedef struct _SCSI_PACKET {
 } SCSI_PACKET;
 
 typedef struct _SCSI_PREPARE_REQUEST {
-	UCHAR			unk1[0x18];
-	PVOID			pLinkedUnk;
+	UCHAR			Unused[0x18];
+	PVOID			pLinkedUnk; // pointer to the single linked list
 	PVOID			pOuterInterface;
 	PVOID			pfnCallDriver;
-	UCHAR		    unk2[0x90];			// NOTE: keep this, needed for correct struct size
+	UCHAR		    Reserved[0x90];
 } SCSI_PREPARE_REQUEST;
+
+typedef struct _REGISTER_QOS_REQUEST {
+    PVOID                   pContext;
+    VhdPrepare_t			pfnSrbPrepare;
+    VhdCompleteRequest_t	pfnSrbCompleteRequest;
+    VhdSaveData_t			pfnSrbSave;
+    VhdRestoreData_t		pfnSrbRestore;
+} REGISTER_QOS_REQUEST;
+
+typedef struct _REGISTER_QOS_RESPONSE {
+    ULONG32					dwDiskSaveSize;
+    ULONG32					dwUnk;
+    PVOID					pIoInterface;
+    SrbStartIo_t			pfnStartIo;
+    SrbSaveData_t			pfnSaveData;
+    SrbRestoreData_t		pfnRestoreData;
+} REGISTER_QOS_RESPONSE;
+
+typedef struct _REGISTER_IO_REQUEST {
+    INT dwVersion;
+    INT dwFlags;
+    UCHAR Unused[16];
+} REGISTER_IO_REQUEST;
+
+typedef struct _UNREGISTER_IO_REQUEST {
+    INT dwVersion;
+    UINT dwUnknown1;
+    UINT dwUnknown2;
+} UNREGISTER_IO_REQUEST;
 
 typedef NTSTATUS(*ParserInit_t)(SrbCallbackInfo *, PCUNICODE_STRING, ULONG32, void **);
 typedef VOID(*ParserCleanup_t)(struct _ParserInstance *);

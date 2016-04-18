@@ -90,7 +90,7 @@ NTSTATUS Log_QueryLogSettings(_Out_ LOG_SETTINGS *Settings);
 
 #define LOG_ASSERT( exp ) \
     ((!(exp)) ? \
-        (Log_Print(LL_FATAL, CONCATENATE ( CONCATENATE ( "["__FUNCTION__"] ", #exp ) , "\r\n" ) ), FALSE) : \
+        (Log_Print(LL_FATAL, CONCATENATE ( "["__FUNCTION__"] Assertion failed: " #exp , "\r\n" ) ), FALSE) : \
         TRUE)
 
 #define LOG_ASSERTMSG( msg, exp ) \

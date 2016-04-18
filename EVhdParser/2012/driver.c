@@ -7,6 +7,7 @@
 #include "Ioctl.h"
 #include "Vdrvroot.h"
 #include "Dispatch.h"
+#include "Extension.h"
 
 static HANDLE g_shimFileHandle = NULL;
 
@@ -22,15 +23,6 @@ void EVhdDriverUnload(PDRIVER_OBJECT pDriverObject)
     Log_Cleanup();
     DPT_Cleanup();
 }
-
-/** Default major function dispatcher */
-static NTSTATUS DispatchPassThrough(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
-
-/** Create major function dispatcher */
-static NTSTATUS DispatchCreate(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
-
-/** Close major function dispatcher */
-static NTSTATUS DispatchClose(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 
 static NTSTATUS EVhdDriverLoad(ULONG32 *pResult)
 {
@@ -82,8 +74,16 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	NTSTATUS status = STATUS_SUCCESS;
 	VstorParserInfo ParserInfo = { 0 };
     PDEVICE_OBJECT pDeviceObject = NULL;
+    EVHD_EXT_CAPABILITIES Caps;
 
     pDriverObject->DriverUnload = EVhdDriverUnload;
+
+    status = Ext_Initialize(&Caps);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrint("Failed to initialize extension: %X\n", status);
+        return status;
+    }
 
     status = DPT_Initialize(pDriverObject, pRegistryPath, &pDeviceObject);
     if (!NT_SUCCESS(status))
@@ -104,17 +104,17 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	ParserInfo.qwUnk2 = 1;
 	ParserInfo.qwUnk3 = 1;
 	ParserInfo.pDriverObject = pDriverObject;
-	ParserInfo.pfnParserInit = EVhdInit;
-	ParserInfo.pfnParserCleanup = EVhdCleanup;
-	ParserInfo.pfnParserGetGeometry = EVhdGetGeometry;
-	ParserInfo.pfnParserGetCapabilities = EVhdGetCapabilities;
-	ParserInfo.pfnParserMount = EVhdMount;
-	ParserInfo.pfnParserExecuteSrb = EVhdExecuteSrb;
-	ParserInfo.pfnParserBeginSave = EVhdBeginSave;
-	ParserInfo.pfnParserSaveData = EVhdSaveData;
-	ParserInfo.pfnParserBeginRestore = EVhdBeginRestore;
-	ParserInfo.pfnParserRestoreData = EVhdRestoreData;
-	ParserInfo.pfnParserSetCacheState = EVhdSetCacheState;
+	ParserInfo.pfnParserInit = EVhd_Init;
+	ParserInfo.pfnParserCleanup = EVhd_Cleanup;
+	ParserInfo.pfnParserGetGeometry = EVhd_GetGeometry;
+	ParserInfo.pfnParserGetCapabilities = EVhd_GetCapabilities;
+	ParserInfo.pfnParserMount = EVhd_Mount;
+	ParserInfo.pfnParserExecuteSrb = EVhd_ExecuteSrb;
+	ParserInfo.pfnParserBeginSave = EVhd_BeginSave;
+	ParserInfo.pfnParserSaveData = EVhd_SaveData;
+	ParserInfo.pfnParserBeginRestore = EVhd_BeginRestore;
+	ParserInfo.pfnParserRestoreData = EVhd_RestoreData;
+	ParserInfo.pfnParserSetCacheState = EVhd_SetCacheState;
 	status = EVhdDriverLoad(&ParserInfo.dwBalancerId);
 	if (!NT_SUCCESS(status))
 	{

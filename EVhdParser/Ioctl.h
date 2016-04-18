@@ -220,7 +220,7 @@ typedef enum
 {
 	EDiskInfoType_Geometry					= 0x0,
 	EDiskInfoType_LinkageId					= 0x1,
-	EDiskInfoType_ParentNameList				= 0x2,
+	EDiskInfoType_ParentNameList			= 0x2,
 	EDiskInfoType_ParentLinkageId			= 0x3,
 	EDiskInfoType_ParentTimestamp			= 0x4,
 	EDiskInfoType_ParserInfo				= 0x6,
