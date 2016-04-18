@@ -189,7 +189,7 @@ typedef struct _DISK_INFO_FORMAT {
 	EDiskFormat		DiskFormat;
 	INT				dwBlockSize;
 	GUID			LinkageId;
-	BOOLEAN			f_1C;
+	BOOLEAN			IsRemote;
 	BOOLEAN			bIsInUse;
 	BOOLEAN			bIsFullyAllocated;
 	UCHAR			_align;

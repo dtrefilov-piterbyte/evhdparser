@@ -15,6 +15,9 @@ typedef struct _EVHD_EXT_SCSI_PACKET {
     /** Pointer to the sense buffer
     */
     PVOID pSenseBuffer;
+    /** Length of the sense buffer
+    */
+    SIZE_T SenseBufferLength;
 } EVHD_EXT_SCSI_PACKET, *PEVHD_EXT_SCSI_PACKET;
 
 #define EVHD_MOUNT_FLAG_SHARED_ACCESS

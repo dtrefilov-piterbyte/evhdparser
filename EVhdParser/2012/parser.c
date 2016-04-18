@@ -5,25 +5,63 @@
 #include "Ioctl.h"
 #include "Vdrvroot.h"	 
 #include "utils.h"
+#include "Extension.h"
 
 #define LOG_PARSER(level, format, ...) LOG_FUNCTION(level, LOG_CTG_PARSER, format, __VA_ARGS__)
 
 static const ULONG EvhdPoolTag = 'VVpp';
 
+static NTSTATUS EVhd_InitializeExtension(ParserInstance *parser, PGUID applicationId, PCUNICODE_STRING diskPath)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    DISK_INFO_RESPONSE Response = { 0 };
+    DISK_INFO_REQUEST Request = { EDiskInfoType_ParserInfo };
+    EDiskFormat DiskFormat = EDiskFormat_Unknown;
+    status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION,
+        &Request, sizeof(DISK_INFO_REQUEST), &Response, sizeof(DISK_INFO_RESPONSE));
+    if (!NT_SUCCESS(status))
+    {
+        LOG_PARSER(LL_FATAL, "Failed to retreive parser info. 0x%0X\n", status);
+        return status;
+    }
+    DiskFormat = Response.vals[0].dwLow;
+
+    Request.RequestCode = EDiskInfoType_LinkageId;
+    status = SynchronouseCall(parser->pVhdmpFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION,
+        &Request, sizeof(DISK_INFO_REQUEST), &Response, sizeof(DISK_INFO_RESPONSE));
+    if (!NT_SUCCESS(status))
+    {
+        LOG_PARSER(LL_FATAL, "Failed to retreive virtual disk identifier. 0x%0X\n", status);
+        return status;
+    }
+    status = Ext_Create(diskPath, applicationId, DiskFormat, &Response.guid, &parser->pExtension);
+    return status;
+}
+
+static NTSTATUS EVhd_FinalizeExtension(ParserInstance *parser)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    if (parser->pExtension)
+    {
+        status = Ext_Delete(parser->pExtension);
+    }
+    return status;
+}
+
 static NTSTATUS EVhd_Initialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, HANDLE hFileHandle, PFILE_OBJECT pFileObject, ParserInstance *parser)
 {
     TRACE_FUNCTION_IN();
 	NTSTATUS status = STATUS_SUCCESS;
-	DiskInfoResponse resp = { 0 };
-	EDiskInfoType req = EDiskInfoType_Geometry;
+	DISK_INFO_RESPONSE Response = { 0 };
+    DISK_INFO_REQUEST Request = { EDiskInfoType_Geometry };
 
 	if (0 == (dwFlags & 0x80000))
 		parser->bSuspendable = TRUE;
 
 	KeInitializeSpinLock(&parser->SpinLock);
 
-	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &req, sizeof(req),
-		&resp, sizeof(DiskInfoResponse));
+    status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(DISK_INFO_REQUEST),
+        &Response, sizeof(DISK_INFO_RESPONSE));
 
 	if (!NT_SUCCESS(status))
 	{
@@ -31,9 +69,9 @@ static NTSTATUS EVhd_Initialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, 
 	}
 	else
 	{
-		parser->dwSectorSize = resp.vals[2].dwHigh;
-		parser->dwNumSectors = resp.vals[2].dwLow;
-		parser->qwDiskSize = resp.vals[0].qword;
+		parser->dwSectorSize = Response.vals[2].dwHigh;
+		parser->dwNumSectors = Response.vals[2].dwLow;
+		parser->qwDiskSize = Response.vals[0].qword;
 
 		parser->pfnVstorSrbSave = callbackInfo->pfnVstorSrbSave;
 		parser->pfnVstorSrbRestore = callbackInfo->pfnVstorSrbRestore;
@@ -163,6 +201,15 @@ static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN bFlag)
 	NTSTATUS status = STATUS_SUCCESS;
 	SCSI_ADDRESS scsiAddressResponse = { 0 };
 
+    if (parser->pExtension)
+    {
+        status = Ext_Mount(parser->pExtension);
+        if (!NT_SUCCESS(status))
+        {
+            goto Cleanup;
+        }
+    }
+
 	status = EVhd_RegisterQoS(parser);
     if (!NT_SUCCESS(status))
     {
@@ -217,7 +264,12 @@ static NTSTATUS EVhd_UnregisterIo(ParserInstance *parser)
 		}
 		parser->bIoRegistered = FALSE;
 	}
-	status = EVhd_UnregisterQoS(parser);
+    status = EVhd_UnregisterQoS(parser);
+
+    if (NT_SUCCESS(status) && parser->pExtension)
+    {
+        status = Ext_Dismount(parser->pExtension);
+    }
 Cleanup:
     TRACE_FUNCTION_OUT_STATUS(status);
 	return status;
@@ -236,6 +288,19 @@ static VOID EVhd_PostProcessSrbPacket(SCSI_PACKET *pPacket, NTSTATUS status)
         pPacket->DataTransferLength = pVspRequest->Srb.DataTransferLength;
 	else
 		pPacket->DataTransferLength = 0;
+
+    ParserInstance *pParser = pPacket->pContext;
+    if (pParser->pExtension) {
+        EVHD_EXT_SCSI_PACKET ExtPacket;
+        ExtPacket.pMdl = pPacket->pMdl;
+        ExtPacket.pSenseBuffer = &pPacket->pVspRequest->Srb.SenseInfoBuffer;
+        ExtPacket.SenseBufferLength = pPacket->pVspRequest->Srb.SenseInfoBufferLength;
+        ExtPacket.Srb = &pPacket->pVspRequest->Srb;
+        status = Ext_CompleteScsiRequest(pParser->pExtension, &ExtPacket, status);
+        if (NT_SUCCESS(status)) {
+            pPacket->pMdl = ExtPacket.pMdl;
+        }
+    }
 }
 
 static NTSTATUS EVhd_SrbInitializeInner(SCSI_PACKET *pPacket)
@@ -288,7 +353,7 @@ static NTSTATUS EVhd_SrbInitializeInner(SCSI_PACKET *pPacket)
 	return status;
 }
 
-NTSTATUS EVhd_GetFinalSaveSize(ULONG32 dwDiskSaveSize, ULONG32 dwHeaderSize, ULONG32 *pFinalSaveSize)
+static NTSTATUS EVhd_GetFinalSaveSize(ULONG32 dwDiskSaveSize, ULONG32 dwHeaderSize, ULONG32 *pFinalSaveSize)
 {
 	ULONG32 dwSize = dwDiskSaveSize + dwHeaderSize;
 	if (dwSize < dwDiskSaveSize)
@@ -308,7 +373,7 @@ NTSTATUS EVhd_Init(SrbCallbackInfo *callbackInfo, PCUNICODE_STRING diskPath, ULO
 	PFILE_OBJECT pFileObject = NULL;
 	HANDLE FileHandle = NULL;
 	ParserInstance *parser = NULL;
-	ResiliencyInfoEa *pResiliency = (ResiliencyInfoEa *)*pInOutParam;
+	RESILIENCY_INFO_EA *pResiliency = *pInOutParam;
 	ULONG32 dwFlags = OpenFlags ? ((OpenFlags & 0x80000000) ? 0xD0000 : 0x3B0000) : 0x80000;
 
 	status = OpenVhdmpDevice(&FileHandle, OpenFlags, &pFileObject, diskPath, pResiliency);
@@ -318,7 +383,7 @@ NTSTATUS EVhd_Init(SrbCallbackInfo *callbackInfo, PCUNICODE_STRING diskPath, ULO
 		goto failure_cleanup;
 	}
 
-	parser = (ParserInstance *)ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(ParserInstance), EvhdPoolTag);
+	parser = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(ParserInstance), EvhdPoolTag);
 	if (!parser)
 	{
         LOG_PARSER(LL_FATAL, "Failed to allocate memory for ParserInstance\n");
@@ -335,6 +400,13 @@ NTSTATUS EVhd_Init(SrbCallbackInfo *callbackInfo, PCUNICODE_STRING diskPath, ULO
 		status = STATUS_INVALID_PARAMETER;
 		goto failure_cleanup;
 	}
+    GUID VmId = pResiliency->EaValue;
+    status = EVhd_InitializeExtension(parser, &VmId, diskPath);
+    if (!NT_SUCCESS(status))
+    {
+        LOG_PARSER(LL_ERROR, "EVhd_InitializeExtension failed with error 0x%08X\n", status);
+        goto failure_cleanup;
+    }
 
 	*pInOutParam = parser;
 
@@ -353,18 +425,21 @@ cleanup:
 	return status;
 }
 
-VOID EVhd_Cleanup(ParserInstance *parser)
+VOID EVhd_Cleanup(PVOID pContext)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
+    EVhd_FinalizeExtension(parser);
 	EVhd_Mount(parser, FALSE, FALSE);
 	EVhd_Finalize(parser);
 	ExFreePoolWithTag(parser, EvhdPoolTag);
     TRACE_FUNCTION_OUT();
 }
 
-VOID EVhd_GetGeometry(ParserInstance *parser, ULONG32 *pSectorSize, ULONG64 *pDiskSize, ULONG32 *pNumSectors)
+VOID EVhd_GetGeometry(PVOID pContext, ULONG32 *pSectorSize, ULONG64 *pDiskSize, ULONG32 *pNumSectors)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	if (parser)
 	{
 		if (pSectorSize) *pSectorSize = parser->dwSectorSize;
@@ -374,9 +449,10 @@ VOID EVhd_GetGeometry(ParserInstance *parser, ULONG32 *pSectorSize, ULONG64 *pDi
     TRACE_FUNCTION_OUT();
 }
 
-VOID EVhd_GetCapabilities(ParserInstance *parser, PPARSER_CAPABILITIES pCapabilities)
+VOID EVhd_GetCapabilities(PVOID pContext, PPARSER_CAPABILITIES pCapabilities)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	if (parser && pCapabilities)
 	{
 		pCapabilities->dwUnk1 = 7;
@@ -386,9 +462,10 @@ VOID EVhd_GetCapabilities(ParserInstance *parser, PPARSER_CAPABILITIES pCapabili
     TRACE_FUNCTION_OUT();
 }
 
-NTSTATUS EVhd_Mount(ParserInstance *parser, BOOLEAN bMountDismount, BOOLEAN registerIoFlag)
+NTSTATUS EVhd_Mount(PVOID pContext, BOOLEAN bMountDismount, BOOLEAN registerIoFlag)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	NTSTATUS status = STATUS_SUCCESS;
 
 	if (parser->bMounted == bMountDismount)
@@ -439,7 +516,18 @@ NTSTATUS EVhd_ExecuteSrb(SCSI_PACKET *pPacket)
     if (!pVspRequest)
 		return STATUS_INVALID_PARAMETER;
     memset(pVspRequest, 0, sizeof(STORVSP_REQUEST));
-	status = EVhd_SrbInitializeInner(pPacket);
+    status = EVhd_SrbInitializeInner(pPacket);
+
+    if (NT_SUCCESS(status) && parser->pExtension) {
+        EVHD_EXT_SCSI_PACKET ExtPacket;
+        ExtPacket.pMdl = pPacket->pMdl;
+        ExtPacket.pSenseBuffer = &pPacket->pVspRequest->Srb.SenseInfoBuffer;
+        ExtPacket.SenseBufferLength = pPacket->pVspRequest->Srb.SenseInfoBufferLength;
+        ExtPacket.Srb = &pVspRequest->Srb;
+        status = Ext_StartScsiRequest(parser->pExtension, &ExtPacket);
+        pPacket->pMdl = ExtPacket.pMdl;
+    }
+
 	if (NT_SUCCESS(status))
         status = parser->QoS.pfnStartIo(parser->QoS.pIoInterface, pPacket, pVspRequest, pPacket->pMdl);
 	else
@@ -451,9 +539,10 @@ NTSTATUS EVhd_ExecuteSrb(SCSI_PACKET *pPacket)
 	return status;
 }
 
-NTSTATUS EVhd_BeginSave(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo)
+NTSTATUS EVhd_BeginSave(PVOID pContext, PPARSER_SAVE_STATE_INFO pSaveInfo)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	ULONG32 dwFinalSize = 0;
 	NTSTATUS status = STATUS_SUCCESS;
     if (!pSaveInfo)
@@ -474,9 +563,10 @@ Cleanup:
 	return status;
 }
 
-NTSTATUS EVhd_SaveData(ParserInstance *parser, PVOID pData, ULONG32 *pSize)
+NTSTATUS EVhd_SaveData(PVOID pContext, PVOID pData, ULONG32 *pSize)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
     ULONG32 dwFinalSize = 0;
     NTSTATUS status = STATUS_SUCCESS;
     KIRQL oldIrql = 0;
@@ -514,9 +604,9 @@ Cleanup:
 
 }
 
-NTSTATUS EVhd_BeginRestore(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo)
+NTSTATUS EVhd_BeginRestore(PVOID pContext, PPARSER_SAVE_STATE_INFO pSaveInfo)
 {
-	UNREFERENCED_PARAMETER(parser);
+	UNREFERENCED_PARAMETER(pContext);
     TRACE_FUNCTION_IN();
 	if (!pSaveInfo || pSaveInfo->dwVersion != 1)
 		return STATUS_INVALID_PARAMETER;
@@ -524,9 +614,10 @@ NTSTATUS EVhd_BeginRestore(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSave
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS EVhd_RestoreData(ParserInstance *parser, PVOID pData, ULONG32 size)
+NTSTATUS EVhd_RestoreData(PVOID pContext, PVOID pData, ULONG32 size)
 {
     TRACE_FUNCTION_IN();
+    ParserInstance *parser = pContext;
 	ULONG32 dwFinalSize = 0;
 	NTSTATUS status = STATUS_SUCCESS;
 	KIRQL oldIrql = 0;
@@ -562,8 +653,9 @@ Cleanup:
 	return status;
 }
 
-NTSTATUS EVhd_SetCacheState(ParserInstance *parser, BOOLEAN newState)
+NTSTATUS EVhd_SetCacheState(PVOID pContext, BOOLEAN newState)
 {
+    ParserInstance *parser = pContext;
 	if (!parser)
 		return STATUS_INVALID_PARAMETER;
 	parser->State.bCache = newState;

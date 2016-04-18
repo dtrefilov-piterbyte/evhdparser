@@ -222,26 +222,30 @@ typedef enum
 	EDiskInfoType_LinkageId					= 0x1,
 	EDiskInfoType_ParentNameList			= 0x2,
 	EDiskInfoType_ParentLinkageId			= 0x3,
-	EDiskInfoType_ParentTimestamp			= 0x4,
+	EDiskInfoType_Timestamp			        = 0x4,
 	EDiskInfoType_ParserInfo				= 0x6,
 	EDiskInfoType_Type						= 0x7,
-	EDiskInfoType_IsFullyAllocated			= 0x8,
-	EDiskInfoType_Unk9						= 0x9,
-#if NTDDI_VERSION >= NTDDI_WINBLUE	
+	EDiskInfoType_IsFullyAllocated			= 0x8,  // IS_4K_ALIGNED
+	EDiskInfoType_PhysicalDisk				= 0x9,
 	EDiskInfoType_NumSectors				= 0xA,
 	EDiskInfoType_FragmentationPercentage	= 0xC,
+#if NTDDI_VERSION >= NTDDI_WINBLUE	
 	EDiskInfoType_InUseFlag					= 0xD,
 	EDiskInfoType_Page83Data				= 0xE,
 #if WINVEREX >= 0x10000000
-	EDiskInfoType_RctId						= 0xF,
+	EDiskInfoType_ChangeTrackingState		= 0xF,
 #endif
-#else	 
-	EDiskInfoType_FragmentationPercentage = 0xA,	// 2012
+#else
 #endif
 	EDiskInfoType_InstanceId					= 0x3E8,
 } EDiskInfoType;
 
 #pragma pack (push, 1)
+
+typedef struct {
+    EDiskInfoType   RequestCode;
+} DISK_INFO_REQUEST;
+
 typedef union {
 	struct {
 		INT dwLow;
@@ -249,6 +253,7 @@ typedef union {
 	};
 	ULONG64 qword;
 } uVal;
+
 typedef struct {
 	EDiskInfoType dwRequestCode;
 	INT dwUnk;
@@ -256,7 +261,7 @@ typedef struct {
 		GUID guid;
 		uVal vals[3];
 	};
-} DiskInfoResponse;
+} DISK_INFO_RESPONSE;
 #pragma pack(pop)	 	
 
 #pragma warning(pop)

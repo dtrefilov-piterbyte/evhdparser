@@ -15,8 +15,8 @@ NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 	PFILE_OBJECT pFileObject = NULL;
 	PDEVICE_OBJECT pDeviceObject = NULL;
 	PZZWSTR SymbolicLinkList = NULL;
-	FindShimRequest inputBuffer = { 0 };
-	FindShimResponse outputBuffer = { 0 };
+	FIND_SHIM_REQUEST inputBuffer = { 0 };
+	FIND_SHIM_RESPONSE outputBuffer = { 0 };
 	SIZE_T ShimNameLength = 0;
 
 	if (!pShimName)
@@ -54,8 +54,8 @@ NTSTATUS FindShimDevice(PUNICODE_STRING pShimName, PCUNICODE_STRING pDiskPath)
 	inputBuffer.Reserved1 = 0;
 	inputBuffer.Reserved2 = 0;
 
-	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_FIND_SHIM, &inputBuffer, sizeof(FindShimRequest),
-		&outputBuffer, sizeof(FindShimResponse));
+	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_FIND_SHIM,
+        &inputBuffer, sizeof(FIND_SHIM_REQUEST), &outputBuffer, sizeof(FIND_SHIM_RESPONSE));
 	if (!NT_SUCCESS(status))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "SynchronouseCall failed with error 0x%0x\n", status);
@@ -114,11 +114,10 @@ cleanup:
 
 NTSTATUS GetIsDifferencing(HANDLE FileHandle, __out BOOLEAN *pResult)
 {
-	NTSTATUS status = STATUS_SUCCESS;
-	PFILE_OBJECT pFileObject = NULL;
-	EDiskInfoType Request = EDiskInfoType_Type;
-	DiskInfoResponse Response = { 0 };
-	Request = EDiskInfoType_Type;
+    NTSTATUS status = STATUS_SUCCESS;
+    PFILE_OBJECT pFileObject = NULL;
+    DISK_INFO_REQUEST Request = { EDiskInfoType_Type };
+	DISK_INFO_RESPONSE Response = { 0 };
 
 	status = ObReferenceObjectByHandle(FileHandle, 0, *IoFileObjectType, KernelMode, (PVOID*)&pFileObject, NULL);
 	if (!NT_SUCCESS(status))
@@ -127,8 +126,8 @@ NTSTATUS GetIsDifferencing(HANDLE FileHandle, __out BOOLEAN *pResult)
 		goto cleanup;
 	}
 
-	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION, &Request, sizeof(Request),
-		&Response, sizeof(DiskInfoResponse));
+	status = SynchronouseCall(pFileObject, IOCTL_STORAGE_VHD_GET_INFORMATION,
+        &Request, sizeof(DISK_INFO_REQUEST), &Response, sizeof(DISK_INFO_RESPONSE));
 	if (!NT_SUCCESS(status))
 	{
         LOG_FUNCTION(LL_FATAL, LOG_CTG_GENERAL, "Failed to retreive disk type. 0x%0X\n", status);
@@ -141,10 +140,8 @@ cleanup:
 	return status;
 }
 
-
-// TODO: OpenFlags are from set OPEN_VIRTUAL_DISK_FLAG?
 NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *ppFileObject, PCUNICODE_STRING diskPath,
-	const ResiliencyInfoEa *pResiliency)
+	const RESILIENCY_INFO_EA *pResiliency)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 	HANDLE FileHandle = NULL;
@@ -152,7 +149,7 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	IO_STATUS_BLOCK StatusBlock = { 0 };
 	UNICODE_STRING VhdmpPath = { 0 };
 	PFILE_OBJECT pFileObject = NULL;
-	OpenDiskEa ea = { 0 };
+	OPEN_DISK_EA ea = { 0 };
 	BOOLEAN getInfoOnly = OpenFlags & 1;
 
 	status = FindShimDevice(&VhdmpPath, diskPath);
@@ -165,12 +162,12 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 	ea.NextEntryOffset = 0;
 	ea.Flags = FILE_NEED_EA;
 	ea.EaNameLength = sizeof(ea.szType) - 1;
-	ea.EaValueLength = sizeof(VirtDiskInfo);
+	ea.EaValueLength = sizeof(VIRT_DISK_INFO);
 	strncpy(ea.szType, OPEN_FILE_VIRT_DISK_INFO_EA_NAME, sizeof(ea.szType));
 	ea.VirtDisk.DevInterfaceClassGuid = GUID_DEVINTERFACE_SURFACE_VIRTUAL_DRIVE;
 	ea.VirtDisk.DiskFormat = EDiskFormat_Vhd;
 	ea.VirtDisk.ParserProviderId = VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT;
-	ea.VirtDisk.dwSize = sizeof(VirtDiskInfo);
+	ea.VirtDisk.dwSize = sizeof(VIRT_DISK_INFO);
 #if NTDDI_VERSION >= NTDDI_WINBLUE
 	ea.VirtDisk.OpenFlags = 0;
 	if (!getInfoOnly)
@@ -213,8 +210,8 @@ NTSTATUS OpenVhdmpDevice(HANDLE *pFileHandle, ULONG32 OpenFlags, PFILE_OBJECT *p
 
 	if (pResiliency)
 	{
-		ea.NextEntryOffset = offsetof(OpenDiskEa, VmInfo);
-		memmove(&ea.VmInfo, pResiliency, sizeof(ResiliencyInfoEa));
+		ea.NextEntryOffset = offsetof(OPEN_DISK_EA, VmInfo);
+		memmove(&ea.VmInfo, pResiliency, sizeof(RESILIENCY_INFO_EA));
 	}
 
 	if (VhdmpPath.Length > 6 &&

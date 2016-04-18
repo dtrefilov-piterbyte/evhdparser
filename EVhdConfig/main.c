@@ -107,7 +107,7 @@ static DWORD GetVhdId(LPTSTR lpszVhdPath, GUID *lpDiskId)
 		.VendorId = VIRTUAL_STORAGE_TYPE_VENDOR_UNKNOWN
 	};
 	GET_VIRTUAL_DISK_INFO DiskInfo = {
-		.Version = GET_VIRTUAL_DISK_INFO_VIRTUAL_DISK_ID
+        .Version = GET_VIRTUAL_DISK_INFO_IDENTIFIER
 	};
 	ULONG diskInfoSize = sizeof(DiskInfo);
 	HANDLE hVhd = NULL;

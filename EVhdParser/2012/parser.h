@@ -28,16 +28,17 @@ typedef struct _ParserInstance {
 	VstorRestoreData_t					pfnVstorSrbRestore;
 	VstorPrepare_t						pfnVstorSrbPrepare;
 	QoSInfo								QoS;
+    PVOID                               pExtension;
 } ParserInstance;
 
 NTSTATUS EVhd_Init(SrbCallbackInfo *openInfo, PCUNICODE_STRING diskPath, ULONG32 OpenFlags, void **pInOutParam);
-VOID EVhd_Cleanup(ParserInstance *parser);
-VOID EVhd_GetGeometry(ParserInstance *parser, ULONG32 *pSectorSize, ULONG64 *pDiskSize, ULONG32 *pNumSectors);
-VOID EVhd_GetCapabilities(ParserInstance *parser, PPARSER_CAPABILITIES pCapabilities);
-NTSTATUS EVhd_Mount(ParserInstance *parser, BOOLEAN bMountDismount, BOOLEAN registerIoFlag);
+VOID EVhd_Cleanup(PVOID pContext);
+VOID EVhd_GetGeometry(PVOID pContext, ULONG32 *pSectorSize, ULONG64 *pDiskSize, ULONG32 *pNumSectors);
+VOID EVhd_GetCapabilities(PVOID pContext, PPARSER_CAPABILITIES pCapabilities);
+NTSTATUS EVhd_Mount(PVOID pContext, BOOLEAN bMountDismount, BOOLEAN registerIoFlag);
 NTSTATUS EVhd_ExecuteSrb(SCSI_PACKET *pPacket);
-NTSTATUS EVhd_BeginSave(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo);
-NTSTATUS EVhd_SaveData(ParserInstance *parser, PVOID pData, ULONG32 *pSize);
-NTSTATUS EVhd_BeginRestore(ParserInstance *parser, PPARSER_SAVE_STATE_INFO pSaveInfo);
-NTSTATUS EVhd_RestoreData(ParserInstance *parser, PVOID pData, ULONG32 size);
-NTSTATUS EVhd_SetCacheState(ParserInstance *parser, BOOLEAN newState);
+NTSTATUS EVhd_BeginSave(PVOID pContext, PPARSER_SAVE_STATE_INFO pSaveInfo);
+NTSTATUS EVhd_SaveData(PVOID pContext, PVOID pData, ULONG32 *pSize);
+NTSTATUS EVhd_BeginRestore(PVOID pContext, PPARSER_SAVE_STATE_INFO pSaveInfo);
+NTSTATUS EVhd_RestoreData(PVOID pContext, PVOID pData, ULONG32 size);
+NTSTATUS EVhd_SetCacheState(PVOID pContext, BOOLEAN newState);
