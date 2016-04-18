@@ -44,6 +44,7 @@ static NTSTATUS EVhd_FinalizeExtension(ParserInstance *parser)
 	if (parser->pExtension)
 	{
         status = Ext_Delete(parser->pExtension);
+        parser->pExtension = NULL;
 	}
 	return status;
 }

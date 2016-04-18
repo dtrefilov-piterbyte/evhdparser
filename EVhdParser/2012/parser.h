@@ -15,7 +15,7 @@ typedef struct _ParserInstance {
 	UCHAR								ScsiPathId;
 	UCHAR								ScsiTargetId;
 	UCHAR								ScsiLun;
-	BOOLEAN								bSuspendable;
+	BOOLEAN								bStateless;
 	BOOLEAN								bQoSRegistered;
 	BOOLEAN								bIoRegistered;
 	BOOLEAN								bMounted;

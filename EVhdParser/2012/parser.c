@@ -44,6 +44,7 @@ static NTSTATUS EVhd_FinalizeExtension(ParserInstance *parser)
     if (parser->pExtension)
     {
         status = Ext_Delete(parser->pExtension);
+        parser->pExtension = NULL;
     }
     return status;
 }
@@ -56,7 +57,7 @@ static NTSTATUS EVhd_Initialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, 
     DISK_INFO_REQUEST Request = { EDiskInfoType_Geometry };
 
 	if (0 == (dwFlags & 0x80000))
-		parser->bSuspendable = TRUE;
+        parser->bStateless = TRUE;
 
 	KeInitializeSpinLock(&parser->SpinLock);
 
@@ -77,7 +78,7 @@ static NTSTATUS EVhd_Initialize(SrbCallbackInfo *callbackInfo, ULONG32 dwFlags, 
 		parser->pfnVstorSrbRestore = callbackInfo->pfnVstorSrbRestore;
 		parser->pfnVstorSrbPrepare = callbackInfo->pfnVstorSrbPrepare;
 
-        if (!parser->bSuspendable)
+        if (!parser->bStateless)
 		{
 			parser->pVhdmpFileObject = pFileObject;
 			parser->FileHandle = hFileHandle;
@@ -243,6 +244,7 @@ static NTSTATUS EVhd_RegisterIo(ParserInstance *parser, BOOLEAN bFlag)
     parser->ScsiPathId = scsiAddressResponse.PathId;
     parser->ScsiTargetId = scsiAddressResponse.TargetId;
 Cleanup:
+    TRACE_FUNCTION_OUT_STATUS(status);
 
 	return status;
 }
@@ -470,7 +472,7 @@ NTSTATUS EVhd_Mount(PVOID pContext, BOOLEAN bMountDismount, BOOLEAN registerIoFl
 
 	if (parser->bMounted == bMountDismount)
 	{
-        LOG_PARSER(LL_FATAL, "Already in a target state");
+        LOG_PARSER(LL_FATAL, "Already in the target state");
 		return STATUS_INVALID_DEVICE_STATE;
 	}
 
@@ -503,7 +505,7 @@ NTSTATUS EVhd_ExecuteSrb(SCSI_PACKET *pPacket)
 	parser = pPacket->pContext;
 	if (!parser)
 		return STATUS_INVALID_PARAMETER;
-	if (parser->bSuspendable)
+    if (parser->bStateless)
 	{
         LOG_PARSER(LL_FATAL, "Requested asynchronouse Io for synchronouse parser instance");
 		return STATUS_INVALID_DEVICE_REQUEST;
@@ -580,12 +582,12 @@ NTSTATUS EVhd_SaveData(PVOID pContext, PVOID pData, ULONG32 *pSize)
     {
         goto Cleanup;
     }
-    if (dwFinalSize <= *pSize)
+    if (dwFinalSize > *pSize)
     {
         status = STATUS_BUFFER_TOO_SMALL;
         goto Cleanup;
     }
-	if (!parser->bSuspendable)
+    if (parser->bStateless)
 	{
 		status = STATUS_INVALID_DEVICE_REQUEST;
         goto Cleanup;
@@ -631,11 +633,12 @@ NTSTATUS EVhd_RestoreData(PVOID pContext, PVOID pData, ULONG32 size)
     {
         goto Cleanup;
     }
-    if (dwFinalSize <= size)
+    if (dwFinalSize > size)
     {
+        status = STATUS_INVALID_BUFFER_SIZE;
         goto Cleanup;
     }
-	if (!parser->bSuspendable)
+	if (parser->bStateless)
 	{
 		status = STATUS_INVALID_DEVICE_REQUEST;
         goto Cleanup;

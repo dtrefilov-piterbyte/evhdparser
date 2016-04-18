@@ -147,11 +147,8 @@ NTSTATUS Ext_Delete(_In_ PVOID ExtContext)
 {
     NTSTATUS Status = STATUS_SUCCESS;
     TRACE_FUNCTION_IN();
-    PEXTENSION_CONTEXT Context = ExtContext;
-    if (Context->pCipherEngine) {
-        Context->pCipherEngine->pfnDestroy(Context->pCipherContext);
-    }
-    ExFreePoolWithTag(Context, ExtAllocationTag);
+    Ext_Dismount(ExtContext);
+    ExFreePoolWithTag(ExtContext, ExtAllocationTag);
     TRACE_FUNCTION_OUT_STATUS(Status);
     return Status;
 }
@@ -171,7 +168,6 @@ NTSTATUS Ext_Mount(_In_ PVOID ExtContext)
 
 NTSTATUS Ext_Dismount(_In_ PVOID ExtContext)
 {
-    UNREFERENCED_PARAMETER(ExtContext);
     TRACE_FUNCTION_IN();
     NTSTATUS Status = STATUS_SUCCESS;
     PEXTENSION_CONTEXT Context = ExtContext;
