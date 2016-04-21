@@ -158,6 +158,7 @@ NTSTATUS Ext_Mount(_In_ PVOID ExtContext)
     PEXTENSION_CONTEXT Context = ExtContext;
     TRACE_FUNCTION_IN();
     NTSTATUS Status = STATUS_SUCCESS;
+
     Status = CipherEngineGet(&Context->DiskId, &Context->pCipherEngine, &Context->pCipherContext);
     if (!NT_SUCCESS(Status)) {
         EXTLOG(LL_FATAL, "Could not create encryption context");

@@ -16,7 +16,14 @@ typedef struct {
 	PARSER_MESSAGE Message;
 } PARSER_MESSAGE_ENTRY, *PPARSER_MESSAGE_ENTRY;
 
-typedef struct _AUDIT_SUBSCRIPTION_CONTEXT {
+typedef struct _REQUEST_ENTRY {
+    LIST_ENTRY Link;
+
+    KEVENT Event;
+    LARGE_INTEGER StartTime;
+} REQUEST_ENTRY;
+
+typedef struct _SUBSCRIPTION_CONTEXT {
     LIST_ENTRY Link;
 
 	PFILE_OBJECT pFileObject;
@@ -25,12 +32,15 @@ typedef struct _AUDIT_SUBSCRIPTION_CONTEXT {
 	LIST_ENTRY PendedMessages;
 	ULONG PendedMessagesCount;
 
+    /* Whether this context services requests or not */
+    BOOLEAN ServicingContext;
+
 	KSPIN_LOCK Lock;
-} AUDIT_SUBSCRIPTION_CONTEXT;
+} SUBSCRIPTION_CONTEXT;
 
 // Forward declarations
 
-static VOID DPT_CancelPendingReads(AUDIT_SUBSCRIPTION_CONTEXT *pContext);
+static VOID DPT_CancelPendingReads(SUBSCRIPTION_CONTEXT *pContext);
 static NTSTATUS DPT_PassThrough(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 static NTSTATUS DPT_Open(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 static NTSTATUS DPT_ReadCancel(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
@@ -38,12 +48,14 @@ static NTSTATUS DPT_Read(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 static NTSTATUS DPT_Write(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 static NTSTATUS DPT_Close(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
 static NTSTATUS DPT_Control(PDEVICE_OBJECT pDeviceObject, PIRP pIrp);
-static BOOLEAN DPT_SendMessage(AUDIT_SUBSCRIPTION_CONTEXT *pContext, PARSER_MESSAGE *pMessage);
+static BOOLEAN DPT_SendMessage(SUBSCRIPTION_CONTEXT *pContext, PARSER_MESSAGE *pMessage);
 
 // Dispatch globals
-PDEVICE_OBJECT DptDeviceObject = NULL;
+static PDEVICE_OBJECT DptDeviceObject = NULL;
 static LIST_ENTRY DptSubscriptions = { &DptSubscriptions, &DptSubscriptions };
-KSPIN_LOCK DptLock;	// synchronizes access to DptSubscriptions
+static LIST_ENTRY DptRequests = { &DptRequests, &DptRequests };
+static LONG DptRequestCounter = 0;
+static KSPIN_LOCK DptLock;	// synchronizes access to DptSubscriptions
 
 NTSTATUS DPT_Initialize(_In_ PDRIVER_OBJECT pDriverObject, _In_ PCUNICODE_STRING pRegistryPath, _Out_ PDEVICE_OBJECT *ppDeviceObject)
 {
@@ -124,7 +136,7 @@ VOID DPT_Cleanup()
     {
         PLIST_ENTRY pEntry = DptSubscriptions.Flink;
 
-		AUDIT_SUBSCRIPTION_CONTEXT *pContext = CONTAINING_RECORD(pEntry, AUDIT_SUBSCRIPTION_CONTEXT, Link);
+		SUBSCRIPTION_CONTEXT *pContext = CONTAINING_RECORD(pEntry, SUBSCRIPTION_CONTEXT, Link);
 		DPT_CancelPendingReads(pContext);
         ExFreePoolWithTag(pContext, DptAllocationTag);
         RemoveEntryList(pEntry);
@@ -154,7 +166,7 @@ VOID DPT_QueueMessage(_In_ PARSER_MESSAGE *pMessage)
 	KeAcquireSpinLock(&DptLock, &OldIrql);
 	for (pEntry = DptSubscriptions.Flink; pEntry != &DptSubscriptions; pEntry = pEntry->Flink)
 	{
-		AUDIT_SUBSCRIPTION_CONTEXT *pContext = (AUDIT_SUBSCRIPTION_CONTEXT *)pEntry;
+        SUBSCRIPTION_CONTEXT *pContext = CONTAINING_RECORD(pEntry, SUBSCRIPTION_CONTEXT, Link);
 		// if was not able to send message immediatelly, put it in the queue
 		if (!DPT_SendMessage(pContext, pMessage))
 		{
@@ -171,6 +183,49 @@ VOID DPT_QueueMessage(_In_ PARSER_MESSAGE *pMessage)
     KeReleaseSpinLock(&DptLock, OldIrql);
 
 	TRACE_FUNCTION_OUT();
+}
+
+BOOLEAN DPT_IssueRequest(_In_ PARSER_MESSAGE *pRequest, ULONG TimeoutMs)
+{
+    PLIST_ENTRY pEntry = NULL;
+    KIRQL OldIrql;
+    BOOLEAN Result = FALSE;
+
+    TRACE_FUNCTION_IN();
+
+    KeAcquireSpinLock(&DptLock, &OldIrql);
+    for (pEntry = DptSubscriptions.Flink; pEntry != &DptSubscriptions; pEntry = pEntry->Flink)
+    {
+        SUBSCRIPTION_CONTEXT *pContext = CONTAINING_RECORD(pEntry, SUBSCRIPTION_CONTEXT, Link);
+        if (pContext->ServicingContext)
+        {
+            pRequest->RequestId = InterlockedIncrement(&DptRequestCounter);
+            REQUEST_ENTRY RequestEntry = { 0 };
+            KeInitializeEvent(&RequestEntry.Event, NotificationEvent, FALSE);
+            InsertTailList(&DptRequests, &RequestEntry.Link);
+
+            if (DPT_SendMessage(pContext, pRequest))
+            {
+                DPTLOG(LL_INFO, "Request issued %d", pRequest->RequestId);
+                LARGE_INTEGER Timeout;
+                Timeout.QuadPart = -10 * TimeoutMs;
+                KeReleaseSpinLock(&DptLock, OldIrql);
+                NTSTATUS Status = KeWaitForSingleObject(&RequestEntry.Event, DelayExecution, KernelMode, FALSE, &Timeout);
+                KeAcquireSpinLock(&DptLock, &OldIrql);
+                DPTLOG(LL_INFO, "Wait request result 0x%08X", Status);
+                Result = NT_SUCCESS(Status);
+            }
+
+            RemoveEntryList(&RequestEntry.Link);
+
+            break;
+        }
+    }
+
+    KeReleaseSpinLock(&DptLock, OldIrql);
+
+    TRACE_FUNCTION_OUT();
+    return Result;
 }
 
 /** Default major function dispatcher */
@@ -207,7 +262,7 @@ static NTSTATUS DPT_ReadCancel(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 {
 	UNREFERENCED_PARAMETER(pDeviceObject);
 	NTSTATUS Status = STATUS_SUCCESS;
-	AUDIT_SUBSCRIPTION_CONTEXT *pContext = NULL;
+	SUBSCRIPTION_CONTEXT *pContext = NULL;
     KIRQL OldIrql;
 
 	IoReleaseCancelSpinLock(pIrp->CancelIrql);
@@ -225,7 +280,7 @@ static NTSTATUS DPT_ReadCancel(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 	return Status;
 }
 
-static VOID DPT_CancelPendingReads(AUDIT_SUBSCRIPTION_CONTEXT *pContext)
+static VOID DPT_CancelPendingReads(SUBSCRIPTION_CONTEXT *pContext)
 {
 	PLIST_ENTRY pIrpEntry = NULL;
 	PIRP pIrp = NULL;
@@ -292,7 +347,7 @@ static NTSTATUS DPT_Read(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 	UNREFERENCED_PARAMETER(pDeviceObject);
 	NTSTATUS Status = STATUS_SUCCESS;
 	PIO_STACK_LOCATION pIrpSp = NULL;
-	AUDIT_SUBSCRIPTION_CONTEXT *pContext = NULL;
+	SUBSCRIPTION_CONTEXT *pContext = NULL;
 	PLIST_ENTRY pMessageEntry = NULL;
 	PPARSER_MESSAGE_ENTRY pMessage = NULL;
 	PUCHAR pSource = NULL, pBuffer = NULL;
@@ -415,7 +470,7 @@ static NTSTATUS DPT_Close(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 	UNREFERENCED_PARAMETER(pDeviceObject);
 	NTSTATUS Status = STATUS_SUCCESS;
 	PIO_STACK_LOCATION pIrpSp = NULL;
-	AUDIT_SUBSCRIPTION_CONTEXT *pContext = NULL;
+	SUBSCRIPTION_CONTEXT *pContext = NULL;
     KIRQL OldIrql;
 	TRACE_FUNCTION_IN();
 
@@ -443,31 +498,90 @@ static NTSTATUS DPT_Close(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 static NTSTATUS DPT_Control(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
 {
     UNREFERENCED_PARAMETER(pDeviceObject);
-    NTSTATUS IoStatus = STATUS_SUCCESS;
+    NTSTATUS Status = STATUS_SUCCESS;
 
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(pIrp);
+    pIrp->IoStatus.Information = 0;
 
     switch (IrpSp->Parameters.DeviceIoControl.IoControlCode)
     {
     case IOCTL_VIRTUAL_DISK_SET_CIPHER:
+        DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_SET_CIPHER");
         if (sizeof(EVHD_SET_CIPHER_CONFIG_REQUEST) ==
             IrpSp->Parameters.DeviceIoControl.InputBufferLength)
         {
-            EVHD_SET_CIPHER_CONFIG_REQUEST *request = pIrp->AssociatedIrp.SystemBuffer;
-            IoStatus = SetCipherOpts(&request->DiskId, request->Algorithm, &request->Opts);
+            Status = STATUS_INVALID_BUFFER_SIZE;
+            break;
         }
-        else
-            IoStatus = STATUS_INVALID_BUFFER_SIZE;
+        EVHD_SET_CIPHER_CONFIG_REQUEST *request = pIrp->AssociatedIrp.SystemBuffer;
+        Status = SetCipherOpts(&request->DiskId, request->Algorithm, &request->Opts);
+        break;
+    case IOCTL_VIRTUAL_DISK_SET_LOGGER:
+        DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_SET_LOGGER");
+        if (sizeof(LOG_SETTINGS) != IrpSp->Parameters.DeviceIoControl.InputBufferLength ||
+            0 != IrpSp->Parameters.DeviceIoControl.OutputBufferLength)
+        {
+            Status = STATUS_INVALID_BUFFER_SIZE;
+            break;
+        }
+        Status = Log_SetSetting((LOG_SETTINGS *)pIrp->AssociatedIrp.SystemBuffer);
+        pIrp->IoStatus.Information = 0;
+        break;
+    case IOCTL_VIRTUAL_DISK_GET_LOGGER:
+        DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_GET_LOGGER");
+        if (0 != IrpSp->Parameters.DeviceIoControl.InputBufferLength ||
+            sizeof(LOG_SETTINGS) != IrpSp->Parameters.DeviceIoControl.OutputBufferLength)
+        {
+            Status = STATUS_INVALID_BUFFER_SIZE;
+            break;
+        }
+        Status = Log_QueryLogSettings((LOG_SETTINGS *)pIrp->AssociatedIrp.SystemBuffer);
+        if (NT_SUCCESS(Status))
+            pIrp->IoStatus.Information = sizeof(LOG_SETTINGS);
+        break;
+    case IOCTL_VIRTUAL_DISK_CREATE_SUBSCRIPTION: {
+        DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_CREATE_SUBSCRIPTION");
+        if (sizeof(CREATE_SUBSCRIPTION_REQUEST) != IrpSp->Parameters.DeviceIoControl.InputBufferLength ||
+            0 != IrpSp->Parameters.DeviceIoControl.OutputBufferLength)
+        {
+            Status = STATUS_INVALID_BUFFER_SIZE;
+            break;
+        }
+        PVOID pCurrentContext = IrpSp->FileObject->FsContext;
+        if (pCurrentContext != NULL)
+        {
+            DPTLOG(LL_ERROR, "Given file object is already recieving events");
+            Status = STATUS_PIPE_LISTENING;
+            break;
+        }
+        SUBSCRIPTION_CONTEXT *pContext = ExAllocatePoolWithTag(NonPagedPool, sizeof(SUBSCRIPTION_CONTEXT), DptAllocationTag);
+        if (!pContext)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break;
+
+        }
+        memset(pContext, 0, sizeof(SUBSCRIPTION_CONTEXT));
+        pContext->pFileObject = IrpSp->FileObject;
+        KeInitializeSpinLock(&pContext->Lock);
+        InitializeListHead(&pContext->PendedReads);
+        InitializeListHead(&pContext->PendedMessages);
+        pContext->ServicingContext = ((CREATE_SUBSCRIPTION_REQUEST *)pIrp->AssociatedIrp.SystemBuffer)->Servicing;
+        IrpSp->FileObject->FsContext = pContext;
+        pIrp->IoStatus.Information = 0;
+        ExAcquireSpinLockAtDpcLevel(&DptLock);
+        InsertTailList(&DptSubscriptions, &pContext->Link);
+        ExReleaseSpinLockFromDpcLevel(&DptLock);
         break;
     }
+    }
 
-    pIrp->IoStatus.Status = IoStatus;
-    pIrp->IoStatus.Information = 0;
+    pIrp->IoStatus.Status = Status;
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
-    return STATUS_SUCCESS;
+    return Status;
 }
 
-static BOOLEAN DPT_SendMessage(AUDIT_SUBSCRIPTION_CONTEXT *pContext, PARSER_MESSAGE *pMessage)
+static BOOLEAN DPT_SendMessage(SUBSCRIPTION_CONTEXT *pContext, PARSER_MESSAGE *pMessage)
 {
 	PLIST_ENTRY pIrpEntry = NULL;
 	PIRP pIrp = NULL;
