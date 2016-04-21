@@ -13,7 +13,8 @@ typedef struct
 	ECipherAlgo Algorithm;
 	union
 	{
-        AesXtsCipherOptions AesXts;
+        Xts256CipherOptions Xts256;
+        Xts256CascadeCipherOptions Xts256Cascade;
 		UCHAR Reserved[0xEC];
 	} Opts;
 } EVHD_SET_CIPHER_CONFIG_REQUEST;

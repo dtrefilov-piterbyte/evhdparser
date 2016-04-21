@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "cipher.h"
-#include "AesXtsCipher.h"
+#include "DCryptCipher.h"
+#include "Log.h"
 
 #pragma warning(push)
 #pragma warning(disable:4115)
@@ -16,7 +17,8 @@ typedef struct _CipherOptsEntry
 	ECipherAlgo Algorithm;
 	union
 	{
-        AesXtsCipherOptions AesXts;
+        Xts256CipherOptions Xts256;
+        Xts256CascadeCipherOptions Xts256Cascade;
 	} Opts;
 } CipherOptsEntry;
 
@@ -88,6 +90,8 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 	{
 	case ECipherAlgo_Disabled:
     case ECipherAlgo_AesXts:
+    case ECipherAlgo_TwofishXts:
+    case ECipherAlgo_SerpentXts:
 		// Try find existing opts in a list
 		for (pOptsNode = g_pCipherOptsHead; pOptsNode; pOptsNode = pOptsNode->Next)
 		{
@@ -117,12 +121,15 @@ NTSTATUS SetCipherOpts(PGUID pDiskId, ECipherAlgo Algorithm, PVOID pCipherOpts)
 			switch (Algorithm)
 			{
             case ECipherAlgo_AesXts:
-				memcpy(&pThisNode->Opts.AesXts, pCipherOpts, sizeof(AesXtsCipherOptions));
+            case ECipherAlgo_TwofishXts:
+            case ECipherAlgo_SerpentXts:
+				memcpy(&pThisNode->Opts.Xts256, pCipherOpts, sizeof(Xts256CipherOptions));
 				break;
 			}
 		}
 		break;
 	default:
+        
 		status = STATUS_INVALID_PARAMETER;
 	}
 

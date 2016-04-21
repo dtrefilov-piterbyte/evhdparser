@@ -147,7 +147,7 @@ static void EVhd_PostProcessScsiPacket(SCSI_PACKET *pPacket, NTSTATUS status)
         }
 	}
 
-    ParserInstance *pParser = pPacket->pContext;
+    ParserInstance *pParser = pPacket->pVspRequest->pContext;
     if (pParser->pExtension) {
         EVHD_EXT_SCSI_PACKET ExtPacket;
         ExtPacket.pMdl = pPacket->pMdl;

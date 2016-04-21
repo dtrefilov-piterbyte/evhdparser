@@ -294,7 +294,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="AesXtsCipher.c" />
+    <ClCompile Include="DCryptCipher.c" />
     <ClCompile Include="cipher.c" />
     <ClCompile Include="Dispatch.c" />
     <ClCompile Include="Extension.c" />
@@ -361,7 +361,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Win8.1 Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
-    <ClInclude Include="AesXtsCipher.h" />
+    <ClInclude Include="DCryptCipher.h" />
     <ClInclude Include="cipher.h" />
     <ClInclude Include="CipherOpts.h" />
     <ClInclude Include="Control.h" />

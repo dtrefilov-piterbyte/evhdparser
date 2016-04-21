@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "AesXtsCipher.h"
+#include "DCryptCipher.h"
 #include "utils.h"
 #include "Log.h"
 
@@ -17,11 +17,11 @@ typedef struct {
     xts_key dcrypt;
 } DiskCryptorCipherContext;
 
-NTSTATUS AesXtsCipherCreate(PVOID cipherConfig, PVOID *pOutContext)
+NTSTATUS DCryptCipherCreate(PVOID cipherConfig, INT algId, PVOID *pOutContext)
 {
     UCHAR key[XTS_FULL_KEY] = { 0 };
     DiskCryptorCipherContext *context = NULL;
-    AesXtsCipherOptions *pOptions = cipherConfig;
+    Xts256CipherOptions *pOptions = cipherConfig;
     if (!cipherConfig || !pOutContext)
         return STATUS_INVALID_PARAMETER;
     context = ExAllocatePoolWithTag(NonPagedPoolNx, sizeof(DiskCryptorCipherContext), CipherTag);
@@ -32,12 +32,12 @@ NTSTATUS AesXtsCipherCreate(PVOID cipherConfig, PVOID *pOutContext)
     }
     memmove(key, pOptions->CryptoKey, XTS_KEY_SIZE);
     memmove(key + XTS_KEY_SIZE, pOptions->TweakKey, XTS_KEY_SIZE);
-    xts_set_key(key, CF_AES, &context->dcrypt);
+    xts_set_key(key, algId, &context->dcrypt);
     *pOutContext = context;
     return STATUS_SUCCESS;
 }
 
-NTSTATUS AesXtsCipherDestroy(PVOID ctx)
+NTSTATUS DCryptCipherDestroy(PVOID ctx)
 {
     DiskCryptorCipherContext * pContext = ctx;
     RtlZeroMemory(&pContext->dcrypt, sizeof(xts_key));
@@ -68,12 +68,49 @@ NTSTATUS DCryptCipherDecrypt(PVOID ctx, CONST VOID *source, VOID *target, SIZE_T
     return STATUS_SUCCESS;
 }
 
+NTSTATUS AesXtsCipherCreate(PVOID cipherConfig, PVOID pOutContext)
+{
+    return DCryptCipherCreate(cipherConfig, CF_AES, pOutContext);
+}
+
+NTSTATUS TwofishXtsCipherCreate(PVOID cipherConfig, PVOID pOutContext)
+{
+    return DCryptCipherCreate(cipherConfig, CF_TWOFISH, pOutContext);
+}
+
+NTSTATUS SerpentXtsCipherCreate(PVOID cipherConfig, PVOID pOutContext)
+{
+    return DCryptCipherCreate(cipherConfig, CF_SERPENT, pOutContext);
+}
+
 CipherEngine AesXtsCipherEngine =
 {
     .dwBlockSize = XTS_BLOCK_SIZE,
     .dwKeySize = XTS_KEY_SIZE,
     .pfnCreate = AesXtsCipherCreate,
-    .pfnDestroy = AesXtsCipherDestroy,
+    .pfnDestroy = DCryptCipherDestroy,
+    .pfnInit = DCryptCipherInit,
+    .pfnEncrypt = DCryptCipherEncrypt,
+    .pfnDecrypt = DCryptCipherDecrypt
+};
+
+CipherEngine TwofishXtsCipherEngine =
+{
+    .dwBlockSize = XTS_BLOCK_SIZE,
+    .dwKeySize = XTS_KEY_SIZE,
+    .pfnCreate = TwofishXtsCipherCreate,
+    .pfnDestroy = DCryptCipherDestroy,
+    .pfnInit = DCryptCipherInit,
+    .pfnEncrypt = DCryptCipherEncrypt,
+    .pfnDecrypt = DCryptCipherDecrypt
+};
+
+CipherEngine SerpentXtsCipherEngine =
+{
+    .dwBlockSize = XTS_BLOCK_SIZE,
+    .dwKeySize = XTS_KEY_SIZE,
+    .pfnCreate = SerpentXtsCipherCreate,
+    .pfnDestroy = DCryptCipherDestroy,
     .pfnInit = DCryptCipherInit,
     .pfnEncrypt = DCryptCipherEncrypt,
     .pfnDecrypt = DCryptCipherDecrypt

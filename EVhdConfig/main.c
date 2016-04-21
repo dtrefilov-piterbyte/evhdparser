@@ -164,8 +164,8 @@ int _tmain(int argc, _TCHAR* argv[])
             .DiskId = vhdId,
             .Algorithm = ECipherAlgo_AesXts
         };
-        memmove(request.Opts.AesXts.CryptoKey, rgbTest256KeyPart1, 32);
-        memmove(request.Opts.AesXts.TweakKey, rgbTest256KeyPart2, 32);
+        memmove(request.Opts.Xts256.CryptoKey, rgbTest256KeyPart1, 32);
+        memmove(request.Opts.Xts256.TweakKey, rgbTest256KeyPart2, 32);
 
 		if (ERROR_SUCCESS != (dwError = SyncrhonousDeviceIoControl(hDevice,
 			IOCTL_VIRTUAL_DISK_SET_CIPHER, &request, sizeof(request), NULL, 0, NULL)))
