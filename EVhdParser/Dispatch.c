@@ -19,8 +19,10 @@ typedef struct {
 typedef struct _REQUEST_ENTRY {
     LIST_ENTRY Link;
 
+    LONG RequestId;
     KEVENT Event;
     LARGE_INTEGER StartTime;
+    PARSER_RESPONSE_MESSAGE *pResponse;
 } REQUEST_ENTRY;
 
 typedef struct _SUBSCRIPTION_CONTEXT {
@@ -185,9 +187,10 @@ VOID DPT_QueueMessage(_In_ PARSER_MESSAGE *pMessage)
 	TRACE_FUNCTION_OUT();
 }
 
-BOOLEAN DPT_IssueRequest(_In_ PARSER_MESSAGE *pRequest, ULONG TimeoutMs)
+BOOLEAN DPT_SynchronouseRequest(_Inout_ PARSER_MESSAGE *pRequest, _Out_opt_ PARSER_RESPONSE_MESSAGE *pResponse, _In_ ULONG TimeoutMs)
 {
     PLIST_ENTRY pEntry = NULL;
+    PPARSER_MESSAGE_ENTRY pMessageEntry = NULL;
     KIRQL OldIrql;
     BOOLEAN Result = FALSE;
 
@@ -202,19 +205,32 @@ BOOLEAN DPT_IssueRequest(_In_ PARSER_MESSAGE *pRequest, ULONG TimeoutMs)
             pRequest->RequestId = InterlockedIncrement(&DptRequestCounter);
             REQUEST_ENTRY RequestEntry = { 0 };
             KeInitializeEvent(&RequestEntry.Event, NotificationEvent, FALSE);
+            RequestEntry.pResponse = pResponse;
+            RequestEntry.RequestId = pRequest->RequestId;
+            KeQuerySystemTime(&RequestEntry.StartTime);
             InsertTailList(&DptRequests, &RequestEntry.Link);
 
-            if (DPT_SendMessage(pContext, pRequest))
+            // if was not able to send message immediatelly, put it in the queue
+            if (!DPT_SendMessage(pContext, pRequest))
             {
-                DPTLOG(LL_INFO, "Request issued %d", pRequest->RequestId);
-                LARGE_INTEGER Timeout;
-                Timeout.QuadPart = -10 * TimeoutMs;
-                KeReleaseSpinLock(&DptLock, OldIrql);
-                NTSTATUS Status = KeWaitForSingleObject(&RequestEntry.Event, DelayExecution, KernelMode, FALSE, &Timeout);
-                KeAcquireSpinLock(&DptLock, &OldIrql);
-                DPTLOG(LL_INFO, "Wait request result 0x%08X", Status);
-                Result = NT_SUCCESS(Status);
+                DPTLOG(LL_VERBOSE, "Queueing request %d to subscription context %p", pRequest->RequestId, pContext);
+                pMessageEntry = ExAllocatePoolWithTag(NonPagedPool, sizeof(PARSER_MESSAGE_ENTRY), DptAllocationTag);
+                pMessageEntry->Message = *pRequest;
+
+                KeAcquireSpinLockAtDpcLevel(&pContext->Lock);
+                InsertTailList(&pContext->PendedMessages, &pMessageEntry->Link);
+                ++pContext->PendedMessagesCount;
+                KeReleaseSpinLockFromDpcLevel(&pContext->Lock);
             }
+
+            DPTLOG(LL_INFO, "Request issued %d, waiting %d ms", pRequest->RequestId, TimeoutMs);
+            LARGE_INTEGER Timeout;
+            Timeout.QuadPart = -10 * TimeoutMs;
+            KeReleaseSpinLock(&DptLock, OldIrql);
+            NTSTATUS Status = KeWaitForSingleObject(&RequestEntry.Event, DelayExecution, KernelMode, FALSE, &Timeout);
+            KeAcquireSpinLock(&DptLock, &OldIrql);
+            DPTLOG(LL_INFO, "Wait request result 0x%08X", Status);
+            Result = NT_SUCCESS(Status);
 
             RemoveEntryList(&RequestEntry.Link);
 
@@ -226,6 +242,18 @@ BOOLEAN DPT_IssueRequest(_In_ PARSER_MESSAGE *pRequest, ULONG TimeoutMs)
 
     TRACE_FUNCTION_OUT();
     return Result;
+}
+
+static REQUEST_ENTRY *DPT_FindRequestNoLock(LONG RequestId)
+{
+    LIST_ENTRY *pLink;
+    for (pLink = DptRequests.Flink; pLink != &DptRequests; pLink = pLink->Flink)
+    {
+        REQUEST_ENTRY *pRequestEntry = CONTAINING_RECORD(pLink, REQUEST_ENTRY, Link);
+        if (pRequestEntry->RequestId == RequestId)
+            return pRequestEntry;
+    }
+    return NULL;
 }
 
 /** Default major function dispatcher */
@@ -507,7 +535,7 @@ static NTSTATUS DPT_Control(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
     {
     case IOCTL_VIRTUAL_DISK_SET_CIPHER:
         DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_SET_CIPHER");
-        if (sizeof(EVHD_SET_CIPHER_CONFIG_REQUEST) ==
+        if (sizeof(EVHD_SET_CIPHER_CONFIG_REQUEST) !=
             IrpSp->Parameters.DeviceIoControl.InputBufferLength)
         {
             Status = STATUS_INVALID_BUFFER_SIZE;
@@ -574,10 +602,39 @@ static NTSTATUS DPT_Control(PDEVICE_OBJECT pDeviceObject, PIRP pIrp)
         ExReleaseSpinLockFromDpcLevel(&DptLock);
         break;
     }
+    case IOCTL_VIRTUAL_DISK_FINISH_REQUEST: {
+        DPTLOG(LL_INFO, "IOCTL_VIRTUAL_DISK_FINISH_REQUEST");
+        if (sizeof(PARSER_RESPONSE_MESSAGE) != IrpSp->Parameters.DeviceIoControl.InputBufferLength ||
+            0 != IrpSp->Parameters.DeviceIoControl.OutputBufferLength)
+        {
+            Status = STATUS_INVALID_BUFFER_SIZE;
+            break;
+        }
+
+        ExAcquireSpinLockAtDpcLevel(&DptLock);
+        PARSER_RESPONSE_MESSAGE *pResponse = pIrp->AssociatedIrp.SystemBuffer;
+        REQUEST_ENTRY *pRequest = DPT_FindRequestNoLock(pResponse->RequestId);
+        if (pRequest)
+        {
+            memmove(pRequest->pResponse, pResponse, sizeof(PARSER_RESPONSE_MESSAGE));
+            KeSetEvent(&pRequest->Event, LOW_PRIORITY, FALSE);
+        }
+        else
+        {
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+        }
+        ExReleaseSpinLockFromDpcLevel(&DptLock);
+        break;
+    }
+    default:
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+        break;
     }
 
     pIrp->IoStatus.Status = Status;
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+    TRACE_FUNCTION_OUT_STATUS(Status);
+
     return Status;
 }
 

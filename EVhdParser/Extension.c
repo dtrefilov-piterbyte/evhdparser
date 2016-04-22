@@ -4,15 +4,19 @@
 #include "Log.h"
 #include "cipher.h"
 #include "ScsiOp.h"
+#include "Dispatch.h"
 
 #define EXTLOG(level, format, ...) LOG_FUNCTION(level, LOG_CTG_EXTENSION, format, __VA_ARGS__)
 
 const ULONG32 ExtAllocationTag = 'SExt';
 
+static ULONG ExtWaitCipherConfigTimeoutInMs = 5000;
+
 typedef struct {
     CipherEngine *pCipherEngine;
     PVOID pCipherContext;
     GUID DiskId;
+    GUID ApplicationId;
 } EXTENSION_CONTEXT, *PEXTENSION_CONTEXT;
 
 PMDL Ext_AllocateInnerMdl(PMDL pSourceMdl)
@@ -22,7 +26,6 @@ PMDL Ext_AllocateInnerMdl(PMDL pSourceMdl)
     HighAddress.QuadPart = 0xFFFFFFFFFFFFFFFF;
     SkipBytes.QuadPart = 0;
 
-    // TODO: MM_DONT_ZERO_ALLOCATION - is a security issue?
     PMDL pNewMdl = MmAllocatePagesForMdlEx(LowAddress, HighAddress, SkipBytes, pSourceMdl->ByteCount, MmCached, MM_DONT_ZERO_ALLOCATION);
     pNewMdl->Next = pSourceMdl;
 
@@ -40,7 +43,6 @@ PMDL Ext_FreeInnerMdl(PMDL pMdl)
 NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pTargetMdl, SIZE_T size, SIZE_T sector, BOOLEAN Encrypt)
 {
     NTSTATUS status = STATUS_SUCCESS;
-    BOOLEAN mappedSourceMdl = FALSE, mappedTargetMdl = FALSE;
     PVOID pSource = NULL, pTarget = NULL;
     CONST SIZE_T SectorSize = 512;
     SIZE_T SectorOffset = 0;
@@ -50,26 +52,11 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
     if (!ExtContext->pCipherContext)
         return STATUS_SUCCESS;
 
-    mappedSourceMdl = 0 == (pSourceMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
+    pSource = MmGetSystemAddressForMdlSafe(pSourceMdl, NormalPagePriority);
+    pTarget = MmGetSystemAddressForMdlSafe(pTargetMdl, NormalPagePriority);
 
-    pSource = mappedSourceMdl ? MmMapLockedPagesSpecifyCache(pSourceMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
-        : pSourceMdl->MappedSystemVa;
-    if (!pSource)
+    if (!pSource || !pTarget)
         return STATUS_INSUFFICIENT_RESOURCES;
-
-    if (pSourceMdl != pTargetMdl)
-    {
-        mappedTargetMdl = 0 == (pTargetMdl->MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL));
-
-        pTarget = mappedTargetMdl ? MmMapLockedPagesSpecifyCache(pTargetMdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority)
-            : pTargetMdl->MappedSystemVa;
-        if (!pTarget)
-            return STATUS_INSUFFICIENT_RESOURCES;
-    }
-    else
-    {
-        pTarget = pSource;
-    }
 
     LOG_ASSERT(0 == size % SectorSize);
 
@@ -85,9 +72,9 @@ NTSTATUS Ext_CryptBlocks(PEXTENSION_CONTEXT ExtContext, PMDL pSourceMdl, PMDL pT
             break;
     }
 
-    if (mappedSourceMdl && pSourceMdl)
+    if (pSourceMdl && 0 != (pSourceMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA))
         MmUnmapLockedPages(pSource, pSourceMdl);
-    if (mappedTargetMdl && pTargetMdl)
+    if (pTargetMdl && 0 != (pTargetMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA))
         MmUnmapLockedPages(pTarget, pTargetMdl);
     return status;
 }
@@ -118,7 +105,6 @@ NTSTATUS Ext_Create(_In_ PCUNICODE_STRING DiskPath,
     _Outptr_opt_result_maybenull_ PVOID *DiskContext)
 {
     UNREFERENCED_PARAMETER(DiskFormat);
-    UNREFERENCED_PARAMETER(ApplicationId);
     NTSTATUS Status = STATUS_SUCCESS;
     TRACE_FUNCTION_IN();
     EXTLOG(LL_INFO, "Disk opened %S, " GUID_FORMAT, DiskPath->Buffer, GUID_PARAMETERS(*DiskId));
@@ -133,9 +119,10 @@ NTSTATUS Ext_Create(_In_ PCUNICODE_STRING DiskPath,
     }
     else
     {
+        memset(Context, 0, sizeof(EXTENSION_CONTEXT));
         Context->DiskId = *DiskId;
-        Context->pCipherContext = NULL;
-        Context->pCipherEngine = NULL;
+        if (ApplicationId)
+            Context->ApplicationId = *ApplicationId;
         *DiskContext = Context;
     }
     
@@ -159,7 +146,27 @@ NTSTATUS Ext_Mount(_In_ PVOID ExtContext)
     TRACE_FUNCTION_IN();
     NTSTATUS Status = STATUS_SUCCESS;
 
-    Status = CipherEngineGet(&Context->DiskId, &Context->pCipherEngine, &Context->pCipherContext);
+    PARSER_MESSAGE Request;
+    PARSER_RESPONSE_MESSAGE Response;
+
+    Request.Type = MessageTypeQueryCipherConfig;
+    Request.Message.QueryCipherConfig.DiskId = Context->DiskId;
+    Request.Message.QueryCipherConfig.ApplicationId = Context->ApplicationId;
+
+    if (DPT_SynchronouseRequest(&Request, &Response, ExtWaitCipherConfigTimeoutInMs))
+    {
+        if (Response.Type == MessageTypeResponseCipherConfig)
+        {
+            Status = CipherCreate(Response.Message.CipherConfig.Algorithm, &Response.Message.CipherConfig.Opts,
+                &Context->pCipherEngine, &Context->pCipherContext);
+        }
+        else
+            Status = STATUS_INVALID_PARAMETER;
+    }
+    else
+    {
+        Status = CipherEngineGet(&Context->DiskId, &Context->pCipherEngine, &Context->pCipherContext);
+    }
     if (!NT_SUCCESS(Status)) {
         EXTLOG(LL_FATAL, "Could not create encryption context");
     }

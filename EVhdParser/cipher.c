@@ -28,7 +28,6 @@ FAST_MUTEX g_pCipherOptsMutex;
 NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *pOutCipherContext)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-	CipherEngine *engine = NULL;
 	CipherOptsEntry *pOptsNode = NULL, *pFoundNode = NULL;
 	ExAcquireFastMutex(&g_pCipherOptsMutex);
 
@@ -43,27 +42,41 @@ NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *
 
 	if (pFoundNode)
 	{
-		switch (pFoundNode->Algorithm)
-		{
-		case ECipherAlgo_AesXts:
-			engine = &AesXtsCipherEngine;
-			break;
-		}
-
-		if (engine)
-		{
-			PVOID pContext = NULL;
-			status = engine->pfnCreate(&pFoundNode->Opts, &pContext);
-			if (NT_SUCCESS(status))
-			{
-				*pOutCipherEngine = engine;
-				*pOutCipherContext = pContext;
-			}
-		}
+        CipherCreate(pFoundNode->Algorithm, &pFoundNode->Opts, pOutCipherEngine, pOutCipherContext);
 	}
 
 	ExReleaseFastMutex(&g_pCipherOptsMutex);
 	return status;
+}
+
+NTSTATUS CipherCreate(ECipherAlgo algId, PVOID pOptions, CipherEngine **pOutCipherEngine, PVOID *pOutCipherContext)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    CipherEngine *engine = NULL;
+    switch (algId)
+    {
+    case ECipherAlgo_AesXts:
+        engine = &AesXtsCipherEngine;
+        break;
+    case ECipherAlgo_SerpentXts:
+        engine = &SerpentXtsCipherEngine;
+        break;
+    case ECipherAlgo_TwofishXts:
+        engine = &TwofishXtsCipherEngine;
+        break;
+    }
+
+    if (engine)
+    {
+        PVOID pContext = NULL;
+        status = engine->pfnCreate(pOptions, &pContext);
+        if (NT_SUCCESS(status))
+        {
+            *pOutCipherEngine = engine;
+            *pOutCipherContext = pContext;
+        }
+    }
+    return status;
 }
 
 NTSTATUS CipherInit()

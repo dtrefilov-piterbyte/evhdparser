@@ -24,6 +24,7 @@ typedef struct _CipherEngine {
 } CipherEngine;
 
 NTSTATUS CipherEngineGet(PGUID pDiskId, CipherEngine **pOutCipherEngine, PVOID *pOutCipherContext);
+NTSTATUS CipherCreate(ECipherAlgo algId, PVOID pOptions, CipherEngine **pOutCipherEngine, PVOID *pOutCipherContext);
 
 NTSTATUS CipherInit();
 NTSTATUS CipherCleanup();

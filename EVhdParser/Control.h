@@ -26,12 +26,6 @@ typedef struct
 	GUID DiskId;
 } EVHD_QUERY_CIPHER_CONFIG_REQUEST;
 
-typedef struct
-{
-	GUID DiskId;
-	ECipherAlgo Algorithm;
-} EVHD_QUERY_CIPHER_CONFIG_RESPONSE;
-
 typedef struct _LOG_SETTINGS {
     ULONG32 LogLevel;
     ULONG32 LogCategories;
@@ -41,18 +35,29 @@ typedef struct _LOG_SETTINGS {
     UINT8 Reserved[32];
 } LOG_SETTINGS;
 
+C_ASSERT(sizeof(LOG_SETTINGS) == 48);
+
 typedef struct _CREATE_SUBSCRIPTION_REQUEST
 {
     BOOLEAN Servicing;
     UCHAR Reserved[3];
 } CREATE_SUBSCRIPTION_REQUEST;
 
-typedef struct _FINISH_REQUEST
+typedef struct _PARSER_RESPONSE_MESSAGE
 {
     LONG RequestId;
-} FINISH_REQUEST;
 
-C_ASSERT(sizeof(LOG_SETTINGS) == 48);
+    enum
+    {
+        MessageTypeResponseCipherConfig
+    } Type;
+
+    union
+    {
+        EVHD_SET_CIPHER_CONFIG_REQUEST CipherConfig;
+        UINT8 Raw[0x100];
+    } Message;
+} PARSER_RESPONSE_MESSAGE;
 
 #define MESSAGE_LENGTH 1016
 
